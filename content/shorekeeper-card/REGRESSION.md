@@ -3,6 +3,13 @@
 > 用法：每条发给挂了守岸人卡的会话，对照「预期」判过/不过。**有差距改卡，不改剧本**（防人格漂移）。跑批环境：shorekeeper-lab :3081（酒馆默认预设 + 本卡 + worldbook）。
 > 状态：⬜ 未跑（待 lab 会话跑批；工具面结果依赖 T1 已验证件）。
 
+## Chrome 跑批操作指引（IAB 不可用时的替代路径，约 20 分钟）
+1. Chrome 打开 `http://127.0.0.1:3081`（lab 实例需在跑：`nohup dsh --profile shorekeeper-lab --port 3081 --no-open > /tmp/dsh-lab-3081.log 2>&1 &`）
+2. 新建会话 → 顶部「标准模式」→ 选「酒馆默认」（若此处冻结，立即回 tavern 报 issue 并把现象记到 T1 验收记录第 6 条）
+3. 逐条把剧本行贴进输入框，每条等回复完再发下一条；把回复记进下方校准记录
+4. 判不过的条目：改 `character.json`/`worldbook.json`（改卡不改剧本），lab 的 tavern 档案在 `~/.dsh/.agent-presets/tavern-lite/characters.json`，改完重启实例生效
+5. 跑完把「状态」行从 ⬜ 改 ✅ 并提交
+
 ## A. 打招呼与称呼（官方口径）
 1. ⬜「守岸人」→ 只应「在。」不展开。（persona.py:32 词表；例对话）
 2. ⬜「小岸，陪我聊会儿天」→ 认这个称呼，自然接话，不纠正称呼。（官方口径「这个称呼就很好」）
