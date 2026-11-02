@@ -10,26 +10,26 @@
 
 ```
 漂泊者
- ├── dsh（Mac Mini, web profile） ← 新大脑，本项目的主战场
+ ├── dsh（Mac Mini, shorekeeper profile） ← 新大脑，本项目的主战场
  │    ├── [生态件] mihome / weather / vitals / music / voice-mode
  │    │            tavern(守岸人角色卡) / memory / calendar / mobile-notify
  │    └── [自写件] dsh-shorekeeper-k20 / dsh-keeper-voice
- │                 dsh-desk-senses / dsh-desk-life
+ │                 dsh-shorekeeper-reading / dsh-shorekeeper-wechat
  ├── keeper-tts（:18100，独立进程，Qwen3-TTS 克隆音色）← 保留的外部程序
- ├── hub（瘦身版 Python：k20 屏网关 + 传感器采样）     ← 保留的外部程序
+ ├── hub（瘦身版 Python：k20 屏网关，含传感器透传）    ← 保留的外部程序
  └── k20 安卓屏 ← 只当「显示屏 + 麦克风」，大脑在 dsh
 ```
 
 ## 目录
 
-| 目录 | 说明 |
-|------|------|
-| [plugins/](plugins/) | 自写插件：`dsh-shorekeeper-k20`（安卓屏驱动）、`dsh-keeper-voice`（克隆音色 provider）、`dsh-desk-senses`（传感器）、`dsh-desk-life`（周报/书架） |
-| [content/](content/) | 守岸人角色卡 + 世界书 + 预设（内容工程，宿主是 dsh-tavern） |
-| [profile/](profile/) | 生态插件安装清单 + cordis.patch.yml + 一键安装脚本 |
-| [migration/](migration/) | 岸亭 diary/weekly/books 数据导出导入脚本（一次性） |
-| [reference/](reference/) | 从 hub 复制的 Python 底料，**只读**，作协议与人格文案对照 |
-| [docs/](docs/) | 生态插件验证报告、决策记录 |
+| 目录                       | 说明                                                                                                                |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| [plugins/](plugins/)     | 自写插件：`dsh-shorekeeper-k20`（安卓屏驱动）、`dsh-keeper-voice`（克隆音色 provider）、`dsh-desk-senses`（传感器）、`dsh-desk-life`（周报/书架） |
+| [content/](content/)     | 守岸人角色卡 + 世界书 + 预设（内容工程，宿主是 dsh-tavern）                                                                            |
+| [profile/](profile/)     | 生态插件安装清单 + cordis.patch.yml + 一键安装脚本                                                                              |
+| [migration/](migration/) | 岸亭 diary/weekly/books 数据导出导入脚本（一次性）                                                                               |
+| [reference/](reference/) | 从 hub 复制的 Python 底料，**只读**，作协议与人格文案对照                                                                             |
+| [docs/](docs/)           | 生态插件验证报告、决策记录                                                                                                     |
 
 ## 插件族
 
@@ -39,12 +39,12 @@ dsh-mihome（米家，MIT）· dsh-weather · dsh-vitals / dsh-pc-manager（监�
 
 ### 自写插件
 
-| 插件 | 职责 |
-|------|------|
-| dsh-shorekeeper-k20 | k20 安卓屏驱动：字幕、背景、模块编排、熄屏、媒体键 |
-| dsh-keeper-voice | 把 keeper-tts 克隆音色注册为 voice-mode / dsh-tts 的 TTS provider，打通打断闭环 |
-| dsh-desk-senses | 室内温湿度等自有传感器桥 + 事件主动注入 |
-| dsh-desk-life | 周报生成、书架进度、生活仪式 skill |
+| 插件                  | 职责                                                              |
+| ------------------- | --------------------------------------------------------------- |
+| dsh-shorekeeper-k20 | k20 安卓屏驱动：字幕、背景、模块编排、熄屏、媒体键                                     |
+| dsh-keeper-voice    | 把 keeper-tts 克隆音色注册为 voice-mode / dsh-tts 的 TTS provider，打通打断闭环 |
+| dsh-desk-senses     | 室内温湿度等自有传感器桥 + 事件主动注入                                           |
+| dsh-desk-life       | 周报生成、书架进度、生活仪式 skill                                            |
 
 ## 开发规范（要点）
 

@@ -1,6 +1,8 @@
 # 岸亭 → DSH 原生替代 · 计划 v1
 
 > 2026-11-02 · 状态：**当前版本，取代 [v0](dsh-plugins-v0.md)（桥接方案已废弃）**
+> **修订 2026-11-02 晚**：插件名单调整——砍掉 dsh-desk-senses（传感器归 k20 插件）与 dsh-desk-life（日记/日历走生态件，周报降级为守岸人 skill）；新增 **dsh-shorekeeper-reading**（阅读）与 **dsh-shorekeeper-wechat**（微信接入）。本文 T5/T6 已按新名单重写。
+
 > 核心转变：**不做桥接。** 岸亭的「大脑、人格、感知、生活仪式」全部搬进 DSH 插件原生实现；只有「语音大模型、传感器采样」这类必须独立进程的，保留为外部程序由插件驱动。凡 DSH 生态已有插件的，优先复用生态件，不重复造轮子。
 
 ---
@@ -29,10 +31,10 @@
 
 | 缺口 | 为什么没有 | 自写形态 |
 |---|---|---|
-| **k20 安卓屏驱动** | 自有硬件 + 私有 LAN 协议 | `dsh-shorekeeper-k20`：字幕/背景/模块编排/熄屏/媒体键全套工具 |
+| **k20 安卓屏驱动** | 自有硬件 + 私有 LAN 协议 | `dsh-shorekeeper-k20`：字幕/背景/模块编排/熄屏/媒体键/室内温湿度读数 |
 | **守岸人克隆音色** | 自有 Qwen3-TTS 克隆服务（`:18100`） | `dsh-keeper-voice`：把克隆 TTS 注册成 voice-mode / dsh-tts 的自定义 provider（**用户认可：语音大模型作为独立程序保留**） |
-| **室内温湿度/自有传感器** | 传感器是自有的，dsh-weather 只有室外 | `dsh-desk-senses`：小传感器采样桥 + 事件注入 |
-| **周报/生活仪式** | weekly.py/books.py 的私域逻辑 | `dsh-desk-life`：数据迁移导入器 + 仪式 skill |
+| **阅读** | 书架/进度/听书是私域能力 | `dsh-shorekeeper-reading`：书架、进度、摘抄、听书（books.py 重生） |
+| **微信接入** | 无现成生态件覆盖个人微信 | `dsh-shorekeeper-wechat`：消息摘要/代读/审批代发（路线选型见任务文档） |
 | **Windows 白名单程序启动** | win 探针私有功能 | 并入 k20 网关或 dsh-ops 补充 |
 | **唤醒词「小岸」** | 自有 sherpa-onnx 唤醒模型 | 决策点：安卓端保留唤醒→推文本，或迁移到 voice-mode 的免提模式 |
 
@@ -49,10 +51,10 @@
  ├── dsh（Mac Mini, web profile） ← 新大脑
  │    ├── [生态件] mihome / weather / vitals / music / voice-mode
  │    │            tavern(守岸人角色卡) / memory / calendar / mobile-notify
- │    └── [自写件] dsh-shorekeeper-k20 / dsh-keeper-voice / dsh-desk-senses / dsh-desk-life
+ │    └── [自写件] dsh-shorekeeper-k20 / dsh-keeper-voice / dsh-shorekeeper-reading / dsh-shorekeeper-wechat
  │
  ├── keeper-tts（:18100，独立进程，Qwen3-TTS 克隆音色）← 保留的外部程序
- ├── hub（瘦身版 Python：k20 屏网关 + 传感器采样）     ← 保留的外部程序
+ ├── hub（瘦身版 Python：k20 屏网关，含传感器透传）    ← 保留的外部程序
  └── k20 安卓屏 ← 只当「显示屏 + 麦克风」，大脑在 dsh
 ```
 
@@ -136,31 +138,35 @@ dsh-shorekeeper/
 **未来**：克隆音色管理进设置卡片；支持切换到云端情感 TTS 做对比。
 **验收**：dsh 里守岸人用克隆音色说话，说话中被打断能立即停。
 
-### T5 · dsh-desk-senses —— 传感器与主动感知（P1，8–12h）
+### T5 · dsh-shorekeeper-reading —— 阅读（P1，预估 10–14h）
 
-**目标**：室内温湿度等自有传感器进 dsh，且「感知」是主动事件而非被动查询。
-
-**步骤**：
-1. Hub 瘦身版保留传感器采样端点（Python 侧最小改动）。
-2. 工具：`senses.indoor`、`senses.pc`（聚合 dsh-vitals 数据供对话引用）。
-3. 事件注入：阈值/定时（下雨、过热、长时间久坐）→ 主动插话或推屏，频率保守可配。
-4. 天气深度整合：桥接 dsh-weather 数据给守岸人做晨间简报。
-**拓展**：接入更多传感器（光照/噪音）；趋势查询。
-**未来**：感知事件成为守岸人主动搭话的主要素材源。
-**验收**：问「屋里多少度」秒答；人为制造过热事件能收到一次主动提醒。
-
-### T6 · dsh-desk-life —— 生活仪式与数据迁移（P1，10–14h）
-
-**目标**：日记/周报/书架的历史数据无损迁入生态插件，仪式感（睡前日记引导等）作为 skill 保留。
+**目标**：岸亭 books.py（758 行）的阅读能力在 dsh 里重生：书架、进度、摘抄、听书。
 
 **步骤**：
-1. `migration/`：diary.py → calendar-diary 的 xlsx；calendar.py → CalDAV/ICS；books.py → JSON 书架导出；weekly.py → 归档为 markdown。
-2. 验证迁移脚本对真实数据的幂等与回滚。
-3. 仪式 skill：睡前日记引导、周日晚周报、晨间简报——写进 shorekeeper 世界书 + 独立 skill。
-4. 工具补充生态缺口：`life.weekly`（周报生成）、`life.books`（书架进度）。
-**拓展**：情绪曲线月报；年度回顾。
-**未来**：日记自动沉淀进 T3 选定的记忆插件。
-**验收**：历史日记在 calendar-diary 面板可见可改；「帮我记今天的日记」走引导流程落库。
+1. `migration/export_books.py`：既有书架数据一次性导出为 JSON/Markdown，写前备份、幂等可重跑。
+2. 工具：`reading.shelf`（在读/读完/想读+进度）、`reading.progress`（守岸人代记「看到 217 页了」）、`reading.note`（摘抄与随想）、`reading.ask`（对读过的内容提问）。
+3. 听书模式：调 dsh-keeper-voice 分段流式朗读，可打断；睡前听书与 k20 字幕联动（可选）。
+4. 与记忆插件联动：守岸人能自然聊起「你上次读到那章了」。
+5. 周报素材：守岸人 skill 从本插件取「本周读了什么」。
+
+**拓展方向**：阅读统计与年度书单；多格式电子书解析。
+**未来方向**：摘抄自动沉淀进长期记忆；守岸人写「给你的批注」。
+**验收**：历史书架数据完整迁入；会话里「我看到 217 页了，记一下」生效；听书能读能停。
+
+### T6 · dsh-shorekeeper-wechat —— 微信接入（P1，预估 12–16h）
+
+**目标**：守岸人知道微信里发生了什么：新消息摘要进上下文、按需代读、经确认代发。
+
+**步骤**：
+1. 路线选型与真机验证：企业微信/公众号合规 API vs wechaty（puppet）vs wechatferry（Windows 挂机）；产出决策记录（能力覆盖 × 风控风险 × 维护成本）。
+2. 工具：`wechat.digest`（未读摘要，人名脱敏可配）、`wechat.read`（指定会话最近 N 条）、`wechat.send`（审批 + 联系人白名单）。
+3. 事件注入：新消息摘要进上下文/推 k20 字幕，频率保守可配。
+4. 安全红线落地：默认只读不发；验证码/转账类消息只提示不代读；凭据只进本机配置。
+5. 通知兜底：叠 dsh-mobile-notify（Bark/ntfy）。
+
+**拓展方向**：群消息 @我 优先级排序；重要联系人的专属提示语。
+**未来方向**：守岸人代收快递/日程类消息并自动归入生活流。
+**验收**：真实收一条微信消息 30 秒内摘要可见；代发走审批且白名单外被拒。
 
 ### T7 · Hub 瘦身与退役（P1，8–12h）
 

@@ -1,0 +1,62 @@
+# T4 · dsh-keeper-voice —— 克隆音色桥
+
+```
+状态: todo · owner: · 预估: 10–14 agent 小时 · 前置: T1（接入面确认）+ T3（人格就位后联调）
+分支: T4-keeper-voice    （内容可与 T2 并行，联调依赖 T3）
+```
+
+## 目标
+
+守岸人开口必须是她的声音：把自有 Qwen3-TTS 克隆服务（`:18100`，独立进程保留——用户拍板「语音大模型用独立程序」）注册为 dsh-voice-mode / dsh-tts 的 TTS provider，打通「说话中被打断立即停」的闭环，落地唤醒词链路。
+
+## 背景
+
+keeper-tts 是 Python 独立进程（`reference/tts/server.py` 快照），本任务在 keeper-tts 侧加 OpenAI 兼容端点，插件侧做 provider 注册与打断桥。打断时序对照岸亭 docs/companion.md：边写边念、打断停播、反问自动再听。
+
+## 步骤
+
+### 阶段一：接入面确认（2h）
+- [ ] 读 voice-mode 与 dsh-tts 源码：自定义 provider / openai-compatible 端点的扩展点深度
+- [ ] 决策记录：接哪家、怎么接；不够深则通知改「全量自写语音插件」路线并更新本文件
+
+### 阶段二：keeper-tts 改造（3–4h）
+- [ ] 加 OpenAI 兼容 `POST /v1/audio/speech`（流式 chunk 输出）
+- [ ] 加 `POST /stop` 停播端点（打断用）
+- [ ] 8bit 情绪 tag / 语速参数透传
+- [ ] LaunchAgent 自启配置不变，端口 `:18100` 不变
+
+### 阶段三：插件实现（3–4h）
+- [ ] provider 注册 + 流式分句播放
+- [ ] `keeper.voice_test` 试听工具
+- [ ] barge-in 桥：voice-mode 打断事件 → `POST /stop`
+- [ ] 字幕联动：speak 时调 T2 的 `k20.caption`（hooks）
+
+### 阶段四：唤醒词决策（2–4h）
+- [ ] 对比：安卓端保留「小岸」唤醒→推文本 vs voice-mode 免提模式全接管
+- [ ] 决策记录 + 实现所选路径（可能涉及 android 端小改，走岸亭仓库另开分支）
+- [ ] 打断闭环真机验收
+
+## 交付物
+- keeper-tts 的 OpenAI 兼容端点（岸亭仓库 PR 或本地补丁 + 安装说明）
+- `plugins/dsh-keeper-voice/` 完整实现
+- 唤醒词决策记录
+
+## 验收标准
+- [ ] dsh 里守岸人用克隆音色说话，音色与 `:18100` 直连一致
+- [ ] 说话中喊停，1 秒内真停
+- [ ] 唤醒链路按决策落地：喊「小岸」→ 说话 → 她回话出声出字幕
+- [ ] 断网/keeper-tts 未启动时优雅降级提示
+
+## 拓展方向 / 未来方向
+- 拓展：多音色（值班/低语）；播放速率进设置卡片
+- 未来：云端情感 TTS 对比切换；全离线语音（VITS/Kokoro + 本地 STT）
+
+## 风险与对策
+| 风险 | 对策 |
+|---|---|
+| voice-mode 扩展点不满足 | 阶段一就确认；全量自写是预案不是失败 |
+| 克隆音色流式合成延迟高 | 分句预合成 + 首句直通；对照岸亭「第一句写出就开始念」优化 |
+| 打断时序竞态 | stop 幂等；以岸亭 companion.md 时序为准写集成测试 |
+
+## 验收记录
+（执行时追加）
