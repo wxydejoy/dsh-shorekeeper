@@ -1,7 +1,7 @@
 # T8 · 集成、发布与端到端验收
 
 ```
-状态: todo · owner: · 预估: 10–12 agent 小时 · 前置: T2–T7 全部完成
+状态: doing · owner: 值班 agent · 预估: 10–12 agent 小时 · 前置: T2–T7 全部完成
 分支: T8-integrate
 ```
 

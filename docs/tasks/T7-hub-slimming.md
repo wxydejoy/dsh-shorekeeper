@@ -1,7 +1,7 @@
 # T7 · Hub 瘦身与退役
 
 ```
-状态: todo · owner: · 预估: 8–12 agent 小时 · 前置: T2–T6 全部完成
+状态: doing · owner: 值班 agent · 预估: 8–12 agent 小时 · 前置: T2–T6 全部完成
 分支: T7-hub-slimming    （工作在岸亭仓库，分支 Shoreting:hub-slim）
 ```
 
