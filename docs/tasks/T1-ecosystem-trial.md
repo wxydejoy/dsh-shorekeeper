@@ -102,6 +102,7 @@
 
 **米家（dsh-mijia-sidebar 1.0.1，D12）**
 - 源码：无任何 agent 工具注册；`state.py` 一次性进程调 mijiaAPI CLI；未装 mijiaAPI/未扫码时 exit 3/4/5 输出引导 JSON（面板转为安装/扫码指引，不崩）
+- **2026-11-03 补充实测**：漂泊者米家凭据已存在（`~/.config/mijia-api/auth.json`，2026-10-27 建立，含 21 台设备 spec 缓存）；补装 mijiaAPI（`pip3 install --user --break-system-packages`）后只读链路全通——`state.py --mode list` 列出 22 台设备（台灯/挂灯/耗材温湿度计/卧室温湿度计/空调伴侣等，含在线态）；温湿度实时读数：卧室 25.4°C/58%、耗材区 25.3°C/14%。**控灯为写操作，按红线留审批**；薄工具层可直接复用 state.py 桥（凭据共享 auth.json）
 
 **语音（dsh-voice-mode 0.7.34，D13）**
 - README+源码验证：zipformer2 流式 + SenseVoice 定稿、Silero VAD 帧级 barge-in + 回声门控、字幕档位、唤醒词（仅 toggle 模式）、让位语义 ADR-0008、Edge 默认免密钥
@@ -119,7 +120,7 @@
 
 ### 遗留人工验收清单（漂泊者，预计 30 分钟）
 1. **日历**：:3081 设置→日历，填 CalDAV 账号/密码（calendar_health 会指路）→ `calendar_list` 出真日程
-2. **米家**：`pip3 install mijiaAPI`（或按面板指引）→ `python3 -m mijiaAPI login` 扫码 → 侧栏米家面板出设备 → 告诉值班 agent，配自写薄工具层
+2. **米家** → ✅ **大部分完成（2026-11-03）**：凭据已有、mijiaAPI 已补装、22 台设备列表与温湿度实时读数已验证。剩：控一次真灯（写操作，需你点头）→ 我配自写薄工具层
 3. **语音**：:3081 输入框旁「进入语音对话模式」，念一段台词 → 验证流式字幕/停顿发送/朗读/开口打断
 4. **feiyu 写侧**：网页随便聊一轮 → 看 `~/.dsh/feiyu-diary/日记.md` 是否长出条目（固化需要一轮结束后的几秒）
 5. **通知**：设置→通知提醒→「试一试」→ macOS 应允通知权限 → 收到系统通知；需要 Bark 推送则填 Bark key
