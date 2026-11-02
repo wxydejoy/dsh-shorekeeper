@@ -28,6 +28,12 @@ TS 工具面 (src/tools.ts)  ──spawn──▶  py/mi_bridge.py  ──mijiaA
 
 凭据：`~/.config/mijia-api/auth.json`（与 dsh-mijia-sidebar 共享，扫码一次即可）。
 
+## ⚠️ 安装要点（T9 首个踩坑，T8 install.sh 同样适用）
+自写 TS 插件以本地路径 `dsh plugin add file:…` 链接进 profile 时，**插件目录必须先 `npm install`**：
+isolated linker 下 TS 源码从插件自身路径解析 `@deepseek-ai/dsh-tools`，没有本地 node_modules 就
+`failed to import`（boot 静默降级，工具不注册）。且运行时依赖（dsh-tools/schemastery/cordis）必须放
+`dependencies` 而非 `devDependencies`（file: 依赖不装 devDeps）。
+
 ## 验收
 
 - [x] `npm test`：9 条（闸门/降级/读数摘要/离线拒绝/越界拒绝）

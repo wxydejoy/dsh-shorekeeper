@@ -36,3 +36,9 @@
 
 ## 验收记录
 - 2026-11-03：真机只读通过——`py/mi_bridge.py list` 22 台；`state --did blt.3.1mc438kgkcg00` → 25.4°C/58%。单元 9/9 绿（tsc strict 无告警）。
+- 2026-11-03 端到端（shorekeeper-hl headless，工具注册后）：
+  - `desk_now`：「早上 6:52，周二（2026 年 11 月 3 日）」——**时钟缺口闭合**（T3 校准 L4 的答案）
+  - `desk_mi_sensor`：「不冷不潮，挺舒服。」（工具返回 25.4°C/58% 后人设化表达）
+  - `desk_mi_light` 闸门：「需要你把米家插件的写入控制打开……开灯得你手动按一下」——**红线行为端到端成立**
+- **踩坑两枚（对 T8 生效）**：① 自写 TS 插件 file: 链接进 profile 前必须先在插件目录 `npm install`（isolated linker 从插件自身路径解析，无本地 node_modules 即 failed to import 且 boot 静默降级）；② 运行时依赖必须在 `dependencies`（file: 依赖不装 devDeps）。已写进插件 README。
+- 待办：控灯真机一次（等漂泊者点头开闸）。
