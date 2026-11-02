@@ -58,11 +58,12 @@ def default_out() -> Path:
 # 章节切分
 # --------------------------------------------------------------------------
 
-# 内置回退切分：第X章/卷/节/回/部/集 与 序章/楔子/引子/番外 等，独占一行视为章节标题
+# 内置回退切分：第X章/卷/节/回/部/集 与 序章/楔子/引子/番外 等，独占一行视为章节标题。
+# 标题部分排除句末标点：避免把「第二章开始。主角出发了！」这类正文行误判成章节标题。
 _CHAPTER_LINE = re.compile(
     r"^[\s　]*("
-    r"第[0-9零一二三四五六七八九十百千万两〇0-9]+[章卷节回部集][^\n]{0,60}"
-    r"|[序幕楔]章|楔子|引子|引言|前言|自序|后记|尾声|终章|番外[^\n]{0,50}"
+    r"第[0-9零一二三四五六七八九十百千万两〇]+[章卷节回部集][^。！？!?；;\n]{0,60}"
+    r"|[序幕楔]章|楔子|引子|引言|前言|自序|后记|尾声|终章|番外[^。！？!?；;\n]{0,50}"
     r")[\s　]*$",
     re.M,
 )
@@ -265,7 +266,7 @@ def _build_book(
     stem = name[: -len(".txt")]
     title, author = split_title_author(stem)
     book: dict[str, Any] = {
-        "id": stem,
+        "id": title,
         "title": title,
         "author": author,
         "source_file": name,
@@ -300,7 +301,8 @@ def _build_book(
         book["chars"] = len(text)
         book["chapters"] = chapters
         book["fidelity"] = fidelity
-        book["percent"] = round(offset / len(text) * 100, 2) if len(text) else 0.0
+        # 岸亭 books.py:319-326 把越界 offset 夹到全文长——percent 同规则夹到 100
+        book["percent"] = round(min(offset, len(text)) / len(text) * 100, 2) if len(text) else 0.0
         cur = chapter_at(chapters, offset)
         book["current_chapter"] = (
             {"index": chapters.index(cur), "title": cur["title"]} if cur else None
