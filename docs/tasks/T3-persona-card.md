@@ -1,7 +1,7 @@
 # T3 · 守岸人人格工程 —— 角色卡 + 世界书 + skill
 
 ```
-状态: todo · owner: · 预估: 12–18 agent 小时 · 前置: T1（tavern 选型）
+状态: doing · owner: 值班 agent（ZCode，T1 会话）· 预估: 12–18 agent 小时 · 前置: T1（tavern 选型）
 分支: T3-persona-card    （可与 T2 并行）
 ```
 
