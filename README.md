@@ -11,8 +11,8 @@
 ```
 漂泊者
  ├── dsh（Mac Mini, shorekeeper profile） ← 新大脑，本项目的主战场
- │    ├── [生态件] mihome / weather / vitals / music / voice-mode
- │    │            tavern(守岸人角色卡) / memory / calendar / mobile-notify
+ │    ├── [生态件] mijia-sidebar(面板) / glass-weather / vitals / music / voice-mode
+ │    │            tavern(守岸人角色卡) / feiyu-memory / calendar / notify-me
  │    └── [自写件] dsh-shorekeeper-k20 / dsh-keeper-voice
  │                 dsh-shorekeeper-reading / dsh-shorekeeper-wechat
  ├── keeper-tts（:18100，独立进程，Qwen3-TTS 克隆音色）← 保留的外部程序
@@ -33,9 +33,11 @@
 
 ## 插件族
 
-### 复用的生态插件（在 profile 里管理，不在本仓库写码）
+### 复用的生态插件（T1 钉版 · 2026-11-03，见 profile/README.md 与 docs/decisions.md）
 
-dsh-mihome（米家，MIT）· dsh-weather · dsh-vitals / dsh-pc-manager（监控）· @doitian/dsh-music · dsh-voice-mode（全双工语音：STT + barge-in + 字幕）· dsh-tavern（角色卡宿主）· 记忆插件（T1 选型）· dsh-calendar · dsh-calendar-diary · dsh-mobile-notify
+dsh-mijia-sidebar 1.0.1（米家面板；无 agent 工具面，控灯走薄工具层待接）· dsh-glass-weather 0.3.0 + dsh-weather-panel 1.8.0（天气）· dsh-vitals 0.1.19（监控）· @doitian/dsh-music 1.2.0 · dsh-voice-mode 0.7.34（全双工语音：STT + barge-in + 字幕；无自定义 TTS 点，TTS 面归 dsh-tts）· dsh-tavern 2.7.26（角色卡宿主）· feiyu-memory 4.0.2（人格+日记记忆）· dsh-calendar 0.14.3 · dsh-notify-me 1.17.0（通知）
+
+> 判死/出局（T1 D4–D15）：dsh-weather · dsh-pc-manager · dsh-system-hud · dsh-calendar-diary（日记归 feiyu）· dsh-mobile-notify（npm 无此包）· memsearch（误会）· dsh-roleplay
 
 ### 自写插件
 
