@@ -1,7 +1,7 @@
 # T4 · dsh-keeper-voice —— 克隆音色桥
 
 ```
-状态: todo · owner: · 预估: 10–14 agent 小时 · 前置: T1（接入面确认）+ T3（人格就位后联调）
+状态: doing · owner: 值班 agent · 开始于: 2026-11-03 · 预估: 10–14 agent 小时 · 前置: T1（接入面确认）+ T3（人格就位后联调）
 分支: T4-keeper-voice    （内容可与 T2 并行，联调依赖 T3）
 ```
 
@@ -16,25 +16,25 @@ keeper-tts 是 Python 独立进程（`reference/tts/server.py` 快照），本�
 ## 步骤
 
 ### 阶段一：接入面确认（2h）
-- [ ] 读 voice-mode 与 dsh-tts 源码：自定义 provider / openai-compatible 端点的扩展点深度
-- [ ] 决策记录：接哪家、怎么接；不够深则通知改「全量自写语音插件」路线并更新本文件
+- [x] 读 voice-mode 与 dsh-tts 源码：自定义 provider / openai-compatible 端点的扩展点深度（装包实测 `dsh-voice-mode@0.7.34`、`@goodandready/dsh-tts@0.4.37`）
+- [x] 决策记录：接哪家、怎么接（`plugins/dsh-keeper-voice/docs/decisions-voice-provider.md`：主选 dsh-tts `custom` provider 纯配置接线；voice-mode 朗读引擎封闭三选一、无自定义口，不改它，两件叠装分工；不需要「全量自写」预案）
 
 ### 阶段二：keeper-tts 改造（3–4h）
-- [ ] 加 OpenAI 兼容 `POST /v1/audio/speech`（流式 chunk 输出）
-- [ ] 加 `POST /stop` 停播端点（打断用）
-- [ ] 8bit 情绪 tag / 语速参数透传
-- [ ] LaunchAgent 自启配置不变，端口 `:18100` 不变
+- [x] 加 OpenAI 兼容 `POST /v1/audio/speech`（wav/pcm 整段返回；**未做 chunk 流式**——引擎在非本地播放路径本就整段合成，首包延迟按风险对策走插件侧分句直通，见验收记录）
+- [x] 加 `POST /stop` 停播端点（打断用）（服务端本就有 `POST /v1/stop`——generation 计数线程安全，`/v1/audio/speech` 合成中被打断会以 `502 stopped` 收场，无需新增）
+- [ ] 8bit 情绪 tag / 语速参数透传（语速 ✅ 路由层钳位 0.7–1.5 透传；8bit 情绪 tag → 拓展区，⏸）
+- [x] LaunchAgent 自启配置不变，端口 `:18100` 不变（未动）
 
 ### 阶段三：插件实现（3–4h）
-- [ ] provider 注册 + 流式分句播放
-- [ ] `keeper.voice_test` 试听工具
-- [ ] barge-in 桥：voice-mode 打断事件 → `POST /stop`
-- [ ] 字幕联动：speak 时调 T2 的 `k20.caption`（hooks）
+- [x] provider 注册 + 流式分句播放（修正：provider 是 **dsh-tts 的 custom provider 配置接线**，零代码；流式分句/播放/barge-in 由 dsh-tts 播放器承担；本插件出 `keeper.status` / `keeper.voice_test` / `keeper.stop` 三工具，11 条单测全绿）
+- [x] `keeper.voice_test` 试听工具
+- [ ] barge-in 桥：voice-mode 打断事件 → `POST /stop`（第一层 dsh-tts 播放器自带 ✅；第二层 voice-mode 公开打断钩子未露出 ⏸ T1 看其事件面，无则降级为手动工具）
+- [ ] 字幕联动：speak 时调 T2 的 `k20.caption`（⏸ 待 T1 真机后接 hooks；k20.caption 走 T2 的协议增补提案路由）
 
 ### 阶段四：唤醒词决策（2–4h）
-- [ ] 对比：安卓端保留「小岸」唤醒→推文本 vs voice-mode 免提模式全接管
-- [ ] 决策记录 + 实现所选路径（可能涉及 android 端小改，走岸亭仓库另开分支）
-- [ ] 打断闭环真机验收
+- [ ] 对比：安卓端保留「小岸」唤醒→推文本 vs voice-mode 免提模式全接管（⏸ 待 T1 实测 voice-mode 免提模式）
+- [ ] 决策记录 + 实现所选路径（可能涉及 android 端小改，走岸亭仓库另开分支）（⏸）
+- [ ] 打断闭环真机验收（⏸）
 
 ## 交付物
 - keeper-tts 的 OpenAI 兼容端点（岸亭仓库 PR 或本地补丁 + 安装说明）
@@ -59,4 +59,9 @@ keeper-tts 是 Python 独立进程（`reference/tts/server.py` 快照），本�
 | 打断时序竞态 | stop 幂等；以岸亭 companion.md 时序为准写集成测试 |
 
 ## 验收记录
-（执行时追加）
+
+### 2026-11-03 · 值班 agent · 阶段一/二/三（代码侧）完成
+- **keeper-tts 侧**（dock 仓库 `tts-openai-endpoint` 分支 b80bc98）：`POST /v1/audio/speech` 落地——OpenAI 兼容形状（input/voice/speed/response_format），wav/pcm（`wave` 模块剥容器，不假设头长）、路由层语速钳位 0.7–1.5（与 `/v1/speak` 一致）、`allow_play=False` 只回字节不出本机喇叭、`InterruptedError → 502 stopped`（打断复用既有 `/v1/stop` generation 计数）。8 条单测（FakeEngine 鸭子类型，不加载真模型；测试解释器用服务 venv `.venv/bin/python`）。**未做 chunk 流式输出**：引擎非本地播放路径本就整段合成，首句延迟走插件侧分句直通（风险对策既定路线）。
+- **插件侧**（本仓库 `T4-keeper-voice` 分支 c3c3cdd）：接入面决策 = dsh-tts `custom` provider（配置接线，profile 片段见决策记录）；`keeper.status` / `keeper.voice_test` / `keeper.stop` 三工具 + mock keeper-tts 单测 11 条全绿；`tsc --noEmit` 零错误。
+- **SDK 实测新发现**：`@deepseek-ai/dsh-tools` 把 10 个兄弟包声明为 peer 且 npm legacy 模式不自动装——插件 devDeps 已显式钉全（reproducibility 顺带解决）；`dsh-voice-mode@0.7.34` 拖 0.2.0-rc.2 旧内部，与 0.2.1-rc.5 宿主同装会 ERESOLVE——**T1 兼容矩阵要专测 voice-mode 与 rc.5 的共装**。
+- ⏸ 待 T1/真机：barge-in 桥第二层（voice-mode 事件面）、字幕联动 hooks（T2 提案路由）、唤醒词决策（阶段四）、打断闭环真机验收。
