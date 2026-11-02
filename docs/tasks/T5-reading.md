@@ -61,4 +61,9 @@
   - percent 未夹到 100 → 对齐岸亭 books.py:319-326 的越界 clamp；
   - 备份断言（backup/t1 与 t2 并存）与模块 docstring「每次运行一个时间戳目录」矛盾 → 按已提交文档语义修测试。
 - 插件四工具落地（`plugins/dsh-shorekeeper-reading/`，10 条单测全绿，`tsc --noEmit` 零错）：数据层与导出器落点一致（`$DSH_HOME/data/reading`）；进度记录联动书架状态机（想读→在读，100%→读完）；书名模糊匹配唯一命中、歧义反问；ask 为本地检索（摘抄+书目），记忆插件检索留 ⏸ 接口。
-- ⏸ 待办：真实书架数据回归（迁移报告抽查 10 本）、听书模式（T4/T1）、k20 字幕联动（T2 提案路由）、记忆联动（T3 选型）。
+- ⏸ 待办：~~真实书架数据回归~~（见下条）、听书模式（T4/T1）、k20 字幕联动（T2 提案路由）、记忆联动（T3 选型）。
+
+### 2026-11-03 · 值班 agent · 真实数据回归完成（闭环一条验收 ⏸→✅）
+- 本机真书架（`~/.config/dock-hub/books`：1 本在读《我合成了全世界(王自律)》9.4MB + progress.json）完整走了一遍导出器：dry-run → 导出 → 幂等二跑（backup/ 时间戳目录生成 ✓）；迁移报告零未识别字段、零异常条目、fidelity=approx（系统 python 无 zh_chapter_splitter，符合预期并如实标注）。
+- **真数据暴露一个集成 bug 并已修复**（a1b9dbe）：导出器 render_shelf 的真实 schema 是 progress 嵌套书对象（percent/chapter_title/char_offset 在里面），插件数据层原按内部 _build_book 形状写（顶层 percent/chapters + 自造 progress.json 旁路）——自造夹具的单测测不出，真实数据一跑即现。已对齐真实契约、去旁路文件、夹具改为照抄真实导出记录；11 条单测 + ShelfStore 直指真实导出目录的端到端（查书/记进度页码保留迁移书签/摘抄/检索）全通。
+- 抽查结论（对应验收标准「抽查 10 本」）：当前书架仅 1 本，全字段核对无损（title/author 拆分、offset→percent 17.64%、章节 217 章、sha256/bytes）；书架扩充后按同流程再抽查。
