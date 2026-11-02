@@ -35,14 +35,16 @@
 
 ### 复用的生态插件（在 profile 里管理，不在本仓库写码）
 
-dsh-mihome（米家，MIT）· dsh-weather · dsh-vitals / dsh-pc-manager（监控）· @doitian/dsh-music · dsh-voice-mode（全双工语音：STT + barge-in + 字幕）· dsh-tavern（角色卡宿主）· 记忆插件（T1 选型）· dsh-calendar · dsh-calendar-diary · dsh-mobile-notify
+dsh-glass-weather + dsh-weather-panel（天气）· dsh-vitals（监控）· @doitian/dsh-music（音乐）· dsh-voice-mode（全双工语音：STT + barge-in + 字幕）· dsh-tavern（角色卡宿主）· feiyu-memory（人格+日记记忆）· dsh-calendar（CalDAV）· dsh-mijia-sidebar（米家面板）· dsh-notify-me（通知）
+
+> T1 实测定稿名单（钉版本见 [profile/README.md](profile/README.md)）。米家「面板」之外的工具面（用嘴控灯/读温湿度）由自写薄工具层承接——mijia-sidebar 无 agent 工具（T1 源码实锤）。
 
 ### 自写插件
 
 | 插件                  | 职责                                                              |
 | ------------------- | --------------------------------------------------------------- |
 | dsh-shorekeeper-k20 | k20 安卓屏驱动：字幕、背景、模块编排、熄屏、媒体键                                     |
-| dsh-keeper-voice    | 把 keeper-tts 克隆音色注册为 voice-mode / dsh-tts 的 TTS provider，打通打断闭环 |
+| dsh-keeper-voice    | keeper-tts（Qwen3-TTS 克隆音色）接入语音链路，打通打断闭环。**T1 变更**：voice-mode 的 ttsEngine 是封闭枚举（edge/vits/kokoro），无自定义 provider 扩展点（D13）——T4 全量自写语音链路或 fork voice-mode，二选一由 T4 定 |
 | dsh-shorekeeper-reading | 阅读：书架、进度、摘抄、听书（岸亭 books.py 重生）                            |
 | dsh-shorekeeper-wechat  | 微信接入：消息摘要、代读、审批代发                                          |
 

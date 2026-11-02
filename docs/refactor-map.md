@@ -16,14 +16,14 @@
 | `server.py` | 757 | HTTP 骨架退役；仅 k20 长轮询端点保留最小实现 | T2/T7 | ⚪ |
 | `companion_desk.py` | 731 | 桌面陪伴逻辑 → 守岸人角色卡内容 | T3 | ⚪ |
 | `persona.py` | 599 | 人格 → Tavern 角色卡 + 世界书 | T3 | ⚪ |
-| `mijia_bridge.py` + `mijia_catalog.py` | ~1000 | **整块退役**，由 dsh-mihome 直连替代 | T1 验证 / T7 退役 | ⚪ |
+| `mijia_bridge.py` + `mijia_catalog.py` | ~1000 | **整块退役**：面板由 dsh-mijia-sidebar 承接；「用嘴控灯」由自写薄工具层（直调 mijiaAPI，T2/T7）承接 | T1 验证 / T2/T7 | 🔵 |
 | `setup_ui.py` | 970 | 配置向导退役 → dsh 设置卡片接管 | T7 | ⚪ |
 | `features.py` | 982 | 功能开关 → 各插件 Config namespace | T7 | ⚪ |
-| `reads.py` | 441 | 拆分：室外天气 → dsh-weather；室内温湿度 → dsh-mihome（米家温湿度计读数） | T1 | ⚪ |
-| `calendar.py` | 397 | → dsh-calendar（CalDAV），历史数据迁移（migration/ 脚本） | T3 | ⚪ |
-| `diary.py` | 368 | → dsh-calendar-diary（xlsx），历史数据迁移（migration/ 脚本） | T3 | ⚪ |
-| `weekly.py` | ~300 | → 守岸人周报 skill（T3 内容工程，数据源为 memory 记忆） | T3 | ⚪ |
-| `media.py` | ~250 | → @doitian/dsh-music 生态件 | T1 验证 | ⚪ |
+| `reads.py` | 441 | 拆分：室外天气 → dsh-glass-weather + dsh-weather-panel（T1 实测✓）；室内温湿度 → 自写米家薄工具层（T2/T7） | T1 ✓ / T2 | 🔵 |
+| `calendar.py` | 397 | → dsh-calendar（CalDAV 7 工具✓），历史数据迁移（migration/ 脚本） | T3 | 🔵 |
+| `diary.py` | 368 | → feiyu-memory 日记档案（jsonl，可导入），xlsx 迁移在 T3 对账 | T3 | 🔵 |
+| `weekly.py` | ~300 | → 守岸人周报 skill（T3 内容工程，数据源为 feiyu-memory 记忆） | T3 | ⚪ |
+| `media.py` | ~250 | → @doitian/dsh-music（搜索/播放/队列实测✓；网易云登录留漂泊者） | T1 ✓ | 🟢 |
 | `system_volume.py` | ~200 | 音量控制 → 归入 dsh-shorekeeper-k20 媒体面或生态件，T1 实测定 | T1/T2 | ⚪ |
 | `wallpaper.py` | ~200 | 背景上传链路 → `k20.wallpaper` 工具 | T2 | ⚪ |
 | `mirror.py` / `chat_log.py` / `metrics.py` 等 | 其余 | T7 盘点后逐个打标（退役/保留） | T7 | ⚪ |
@@ -33,7 +33,7 @@
 | 组件 | 去向 | 承接方 | 状态 |
 |---|---|---|---|
 | `companion/tts/server.py`（Qwen3-TTS 克隆音色） | **保留为独立进程**（用户拍板：语音大模型用独立程序），T4 给它加 OpenAI 兼容 `/v1/audio/speech` 端点 | T4 | ⚪ |
-| `mini/`（Mac 监控 :17891） | 退役 → dsh-vitals / dsh-pc-manager | T1 验证 / T7 | ⚪ |
+| `mini/`（Mac 监控 :17891） | 退役 → dsh-vitals（CPU/内存/GPU ✓，温度功耗无读数——mini 原本也给不出 GPU 负载） | T1 ✓ / T7 | 🟢 |
 | Windows 探针（CPU 上报 + 开程序） | 监控部分退役 → 生态件；「白名单启动程序」并入 k20 网关或 dsh-ops | T1/T7 | ⚪ |
 | `console/`（控制台 + 菜单栏 + web） | 菜单栏瘦身为三件套启停器；web 面板由 DSH 插件卡片替代 | T7/T8 | ⚪ |
 | `android/`（k20 客户端） | **保留**，定位改为「显示屏 + 麦克风」外设；唤醒词链路去留由 T4 决策 | T2/T4 | ⚪ |
@@ -52,8 +52,8 @@
 
 > 2026-11-02 名单修订：dsh-desk-senses、dsh-desk-life 已砍（前者归 k20，后者由生态件 + skill 覆盖）。
 
-## 4. 复用的生态插件（不在本仓库写码）
+## 4. 复用的生态插件（不在本仓库写码，T1 实测定稿）
 
-dsh-mihome（米家，MIT，演示模式可无账号开发）· dsh-weather · dsh-vitals / dsh-pc-manager · @doitian/dsh-music · dsh-voice-mode（全双工语音）· dsh-tavern / dsh-roleplay（角色卡宿主）· 记忆插件（T1 选型）· dsh-calendar · dsh-calendar-diary · dsh-mobile-notify（可选）
+dsh-glass-weather（天气胶囊+get_weather）· dsh-weather-panel（预警面板）· dsh-vitals（监控）· @doitian/dsh-music（音乐 7 工具）· dsh-voice-mode（全双工语音；无自定义 TTS 点，见 D13）· dsh-tavern（角色卡宿主）· feiyu-memory（人格+日记记忆）· dsh-calendar（CalDAV）· dsh-mijia-sidebar（米家面板，无工具面）· dsh-notify-me（通知+外推）
 
-> 生态检索详情与安装命令见 v1 方案 §1；每个生态件的真机验证结论落在 `docs/tasks/T1-*.md` 的验收记录里。
+> 名单与版本钉在 `profile/README.md`；判死与选型理由见 `docs/decisions.md` D4–D15；验证证据在 `docs/tasks/T1-*.md` 验收记录。
