@@ -22,16 +22,29 @@ fi
 say "2/5 建 profile（${PROFILE_NAME}）"
 dsh --profile "${PROFILE_NAME}" --from-default-profile web
 
-say "3/5 生态插件安装"
-# ⏸ 占位：清单与版本以 T1《替代决策清单》（docs/ 下）为准，验收通过才写死到这里。
-#   dsh-mihome / dsh-weather / dsh-vitals / @doitian/dsh-music / dsh-voice-mode
-#   dsh-tavern / dsh-calendar / dsh-calendar-diary / 记忆插件（T1 选型）/ dsh-mobile-notify
-cat <<'LIST'
-TODO(T1): 以下每行在《替代决策清单》落锤后取消注释并钉版本
-# dsh plugin --profile shorekeeper add dsh-mihome@<pin>
-# dsh plugin --profile shorekeeper add dsh-weather@<pin>
-# ...
-LIST
+say "3/5 生态插件安装（T1 钉版清单 2026-11-03 · D4–D15）"
+# 判死/不装名单与依据见 T1 验收记录（docs/decisions.md）与 profile/README.md
+for pkg in \
+  dsh-glass-weather@0.3.0 \
+  dsh-weather-panel@1.8.0 \
+  dsh-vitals@0.1.19 \
+  '@doitian/dsh-music@1.2.0' \
+  dsh-voice-mode@0.7.34 \
+  dsh-tavern@2.7.26 \
+  dsh-mijia-sidebar@1.0.1 \
+  feiyu-memory@4.0.2 \
+  dsh-calendar@0.14.3 \
+  dsh-notify-me@1.17.0 \
+; do
+  dsh plugin --profile "${PROFILE_NAME}" add "${pkg}"
+done
+
+# T1 实测教训（D3）：pnpm-workspace.yaml 删模板默认的 nodeLinker: hoisted（保 isolated linker），
+# 否则老版 @deepseek-ai/* 依赖劫持 base 工具行。--from-default-profile 重建后要重查一次。
+WS_FILE="$HOME/.dsh/profiles/${PROFILE_NAME}/pnpm-workspace.yaml"
+if [ -f "$WS_FILE" ] && grep -q 'nodeLinker' "$WS_FILE"; then
+  echo "⚠️ pnpm-workspace.yaml 里仍有 nodeLinker 行，请按 T1 D3 配方手工删除后重启 profile"
+fi
 
 say "4/5 自写插件链接"
 for plugin in dsh-shorekeeper-k20 dsh-keeper-voice dsh-shorekeeper-reading dsh-shorekeeper-wechat; do
