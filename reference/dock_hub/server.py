@@ -1,0 +1,757 @@
+from __future__ import annotations
+
+import gzip
+import hmac
+import json
+import math
+import os
+import re
+import socket
+import threading
+import time
+from contextlib import nullcontext
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import Any
+from urllib.parse import parse_qs, unquote, urlparse
+
+from dock_hub.accesslog import AccessLog
+from dock_hub.books import MAX_BOOK_BYTES
+from dock_hub.config import HubConfig
+from dock_hub.errors import HubError
+from dock_hub.service import DockHub
+from dock_hub.setup_ui import is_local_client
+
+MAX_BODY = 64 * 1024
+# 控制台的端口：和 console/dock_console/__main__.py、console/menubar/main.swift 保持一致。
+# 启动横幅只报这一个地址——页面全在控制台，Hub 自己不再出 HTML。
+CONSOLE_PORT = 17880
+MAX_WAIT = 30.0
+_DAY_RE = re.compile(r"\d{4}-\d{2}-\d{2}")  # F30 时间线：chats 的 day 参数
+GZIP_MIN = 512
+IDLE_TIMEOUT = 20.0
+MAX_CONNECTIONS = 32
+BUSY_TIMEOUT = 2.0
+_BUSY_BODY = json.dumps(
+    {"error": {"code": "busy", "message": "Hub 正忙，稍后再试"}},
+    ensure_ascii=False,
+).encode("utf-8")
+
+def lan_ips() -> list[str]:
+    found: list[str] = []
+
+    def add(ip: str) -> None:
+        if (
+            ip
+            and ip not in found
+            and not ip.startswith("127.")
+            and not ip.startswith("169.254.")
+        ):
+            found.append(ip)
+
+    # 先探测家里的 10.14.14 网段（三端都在这边），再走默认路由，避免只打出 Wi-Fi 的 192.168
+    for probe in ("10.14.14.1", "223.5.5.5", "8.8.8.8"):
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            sock.settimeout(0.3)
+            sock.connect((probe, 80))
+            add(sock.getsockname()[0])
+            sock.close()
+        except OSError:
+            continue
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            add(info[4][0])
+    except OSError:
+        pass
+    found.sort(key=lambda ip: (0 if ip.startswith("10.14.14.") else 1, ip))
+    return found or ["127.0.0.1"]
+
+
+def _query_int(query: dict[str, list[str]], key: str, default: int) -> int:
+    raw = (query.get(key) or [""])[0].strip()
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        return default
+
+
+def _query_float(query: dict[str, list[str]], key: str, default: float) -> float:
+    raw = (query.get(key) or [""])[0].strip()
+    if not raw:
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        return default
+
+
+def make_handler(hub: DockHub) -> type[BaseHTTPRequestHandler]:
+    # 一个服务器一个：整个进程共用同一份按天滚动的文件
+    access = AccessLog.from_config(hub.config)
+
+    class Handler(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+        # 手机常驻 keep-alive；不设超时，一条闲置连接就永远占一个线程
+        timeout = IDLE_TIMEOUT
+
+        def handle(self) -> None:
+            try:
+                super().handle()
+            except (BrokenPipeError, ConnectionResetError):
+                # 手机切后台、Wi-Fi 切换时会直接掐断，不该刷一屏 traceback
+                self.close_connection = True
+
+        def handle_one_request(self) -> None:
+            # 记一下开始时间，供访问日志算耗时。每条请求单独算，keep-alive 也对
+            self._started = time.perf_counter()
+            super().handle_one_request()
+
+        def log_request(self, code: int | str = "-", size: int | str = "-") -> None:
+            started = getattr(self, "_started", None)
+            ms = (time.perf_counter() - started) * 1000.0 if started else 0.0
+            access.write(self.client_address[0], f"{self.command} {self.path}", code, size, ms)
+
+        def log_message(self, fmt: str, *args: Any) -> None:
+            # 协议层的事（请求行看不懂、连接断了）没有状态码，走这条。
+            # 以前这里只在开了环境变量时才打，现在默认落文件。
+            access.write(self.client_address[0], fmt % args)
+
+        def do_GET(self) -> None:  # noqa: N802
+            parsed = urlparse(self.path)
+            path = parsed.path.rstrip("/") or "/"
+            try:
+                if path.startswith("/setup"):
+                    from dock_hub import setup_ui
+
+                    setup_ui.ensure_local(self)
+                    if setup_ui.handle_setup_get(hub, path, self):
+                        return
+                    raise HubError("not_found", "未知接口")
+                if path == "/health":
+                    self._json(200, hub.health())
+                    return
+                if path == "/metrics":
+                    # Prometheus 文本格式。本机随便读；跨机抓要带 Bearer，
+                    # 免得同网段谁都能看出你几点在跟谁说话。
+                    if not is_local_client(self.client_address):
+                        self._require_auth()
+                    self._text(200, hub.metrics_text(), "text/plain; version=0.0.4; charset=utf-8")
+                    return
+                if path == "/v1/dispatch/status":
+                    # F40：查一件派出去的事。状态机 queued→running→done/failed/timeout/killed
+                    self._require_auth()
+                    self._limit("read")
+                    query = parse_qs(parsed.query)
+                    task_id = (query.get("task_id") or [""])[0].strip()
+                    self._json(200, hub.dispatch_status(task_id))
+                    return
+                if path == "/v1/companion/diary":
+                    # F29：日记列表。鉴权口径与 /chats 相同——本机免 token
+                    self._guard_guest()
+                    if not self._chats_ok():
+                        raise HubError("unauthorized", "Token 不正确")
+                    query = parse_qs(parsed.query)
+                    try:
+                        limit = int((query.get("limit") or ["200"])[0] or 200)
+                    except ValueError:
+                        limit = 200
+                    day = unquote((query.get("day") or [""])[0]).strip()
+                    if day and not _DAY_RE.fullmatch(day):
+                        raise HubError("bad_request", "day 要是 YYYY-MM-DD")
+                    self._json(200, hub.companion_diary(limit=limit, day=day))
+                    return
+                if path == "/v1/companion/week":
+                    self._guard_guest()
+                    if not self._chats_ok():
+                        raise HubError("unauthorized", "Token 不正确")
+                    self._json(200, hub.companion_week())
+                    return
+                if path == "/v1/companion/read/jobs":
+                    if not self._chats_ok():
+                        raise HubError("unauthorized", "Token 不正确")
+                    self._json(200, hub.companion_read_jobs())
+                    return
+                if path == "/v1/companion/books" or path.startswith("/v1/companion/books/"):
+                    self._story_ok()
+                    self._json(200, self._books_get(path))
+                    return
+                if path == "/v1/companion/story":
+                    self._story_ok()
+                    self._json(200, hub.books.story())
+                    return
+                if path == "/v1/companion/chats":
+                    self._guard_guest()
+                    if not self._chats_ok():
+                        raise HubError("unauthorized", "Token 不正确")
+                    query = parse_qs(parsed.query)
+                    try:
+                        limit = int((query.get("limit") or ["200"])[0] or 200)
+                    except ValueError:
+                        limit = 200
+                    q = unquote((query.get("q") or [""])[0])
+                    day = unquote((query.get("day") or [""])[0]).strip()
+                    if day and not _DAY_RE.fullmatch(day):
+                        raise HubError("bad_request", "day 要是 YYYY-MM-DD")
+                    with_days = (query.get("with_days") or [""])[0] not in ("", "0", "false")
+                    self._json(
+                        200,
+                        hub.companion_chats(limit=limit, query=q, day=day, with_days=with_days),
+                    )
+                    return
+                if path == "/v1/companion/memory":
+                    # F28：她记得的事。设置页读它，和 chats 一样走聊天鉴权
+                    self._guard_guest()
+                    if not self._chats_ok():
+                        raise HubError("unauthorized", "Token 不正确")
+                    self._json(200, hub.companion_memory())
+                    return
+                if path == "/v1/snapshot":
+                    self._require_auth()
+                    hub.note_presence()
+                    query = parse_qs(parsed.query)
+                    since = _query_int(query, "since", -1)
+                    wait = _query_float(query, "wait", 0.0)
+                    if since >= 0 and wait > 0:
+                        # 长轮询：状态没变就挂着，变了立刻回；安卓不传就还是老样子
+                        hub.wait_change(since, min(wait, MAX_WAIT))
+                    self._json(200, hub.snapshot())
+                    return
+                if path == "/v1/photos":
+                    # F37 回忆相框：名单。相册没开是空列表，不算错。
+                    self._require_auth()
+                    self._json(200, {"ids": hub.photo_ids()})
+                    return
+                if path.startswith("/v1/photos/"):
+                    # F37 回忆相框：名单走 snapshot.photos，字节走这里。
+                    # 照片基本不变，带 ETag 让手机安心缓存；名单鉴权同 snapshot。
+                    self._require_auth()
+                    photo_id = unquote(path.removeprefix("/v1/photos/"))
+                    data, ctype, etag = hub.photo_bytes(photo_id)
+                    if self.headers.get("If-None-Match") == etag:
+                        self.send_response(304)
+                        self.send_header("ETag", etag)
+                        self.send_header("Content-Length", "0")
+                        self.end_headers()
+                        return
+                    self.send_response(200)
+                    self.send_header("Content-Type", ctype)
+                    self.send_header("Content-Length", str(len(data)))
+                    self.send_header("ETag", etag)
+                    self.send_header("Cache-Control", "private, max-age=86400")
+                    self.end_headers()
+                    self.wfile.write(data)
+                    return
+                if path == "/v1/weather":
+                    # 天气由 Hub 代取：手机可能连在只有局域网的 Wi-Fi 上
+                    self._require_auth()
+                    from dock_hub.weather import fetch_air, fetch_weather
+
+                    query = parse_qs(parsed.query)
+                    city = (query.get("city") or [""])[0].strip()
+                    try:
+                        data = fetch_weather(city)
+                    except ValueError as exc:
+                        raise HubError("bad_request", str(exc)) from exc
+                    except Exception as exc:  # noqa: BLE001
+                        raise HubError("upstream_error", f"天气获取失败：{exc}", status=502) from exc
+                    try:
+                        # PM2.5 顺路捎上（F14）：空气源挂了不能拖累天气本身
+                        data = {**data, "pm25": fetch_air(city)["pm25"]}
+                    except Exception:  # noqa: BLE001
+                        pass
+                    self._json(200, data)
+                    return
+                if path.startswith("/v1/companion/audio/"):
+                    if not self._chats_ok():
+                        raise HubError("unauthorized", "Token 不正确")
+                    audio_id = unquote(path[len("/v1/companion/audio/") :])
+                    query = parse_qs(parsed.query)
+                    download = (query.get("download") or [""])[0] in {"1", "true", "yes"}
+                    filename = f"shorekeeper-{audio_id}.wav" if download else None
+                    self._bytes(200, hub.companion_audio(audio_id), "audio/wav", filename=filename)
+                    return
+                raise HubError("not_found", "未知接口")
+            except HubError as exc:
+                self._json(exc.status, exc.body(), headers=exc.headers)
+
+        def do_POST(self) -> None:  # noqa: N802
+            parsed = urlparse(self.path)
+            path = parsed.path.rstrip("/") or "/"
+            try:
+                if path.startswith("/setup"):
+                    from dock_hub import setup_ui
+
+                    setup_ui.ensure_local(self)
+                    # 配置写入要 application/json 且同源：本机免 Token，跨站页面
+                    # 用 text/plain 的简单请求就能改 token，必须挡在解析之前。
+                    setup_ui.guard_write(self)
+                    body = self._read_json()
+                    if setup_ui.handle_setup_post(hub, path, body, self):
+                        return
+                    raise HubError("not_found", "未知接口")
+                if path == "/v1/companion/chat":
+                    self._require_auth()
+                    self._limit("chat")
+                    hub.note_presence()
+                    body = self._read_json()
+                    with self._lane("chat"):
+                        self._json(200, hub.companion_chat(body))
+                    return
+                if path == "/v1/companion/stop":
+                    if not self._chats_ok():
+                        raise HubError("unauthorized", "Token 不正确")
+                    self._read_json()
+                    self._json(200, hub.companion_stop())
+                    return
+                if path == "/v1/companion/announce":
+                    self._require_auth()
+                    self._limit("announce")
+                    body = self._read_json()
+                    self._json(200, hub.companion_announce(body))
+                    return
+                if path == "/v1/dispatch":
+                    # F40 泰缇斯派发：派一件事出去，立刻回 202，结果另查
+                    self._require_auth()
+                    self._limit("command")
+                    self._json(202, hub.dispatch_task(self._read_json()))
+                    return
+                if path == "/v1/notify/phone":
+                    # F33 反向 / F4：往手机递一句话（脚本、电脑都能用）
+                    self._require_auth()
+                    self._limit("announce")
+                    self._json(200, hub.notify_phone(self._read_json()))
+                    return
+                if path == "/v1/wechat":
+                    # F34：微信机器人转发一句过来，她念出来。单向播报，不做对话
+                    self._require_auth()
+                    self._limit("announce")
+                    self._json(200, hub.ingest_wechat(self._read_json()))
+                    return
+                if path == "/v1/mirror":
+                    # F35 通知镜像：安卓监听器把白名单应用的通知送来，书桌亮一下
+                    self._require_auth()
+                    self._limit("mirror")
+                    self._json(200, hub.ingest_mirror(self._read_json()))
+                    return
+                if path == "/v1/companion/read":
+                    if not self._chats_ok():
+                        raise HubError("unauthorized", "Token 不正确")
+                    self._limit("read")
+                    body = self._read_json()
+                    with self._lane("read"):
+                        self._json(200, hub.companion_read(body))
+                    return
+                if path == "/v1/companion/books":
+                    self._story_ok()
+                    from dock_hub.books import _log
+
+                    name = unquote(self.headers.get("X-Filename") or "")
+                    _log("book_upload", name=name or "-", bytes=self.headers.get("Content-Length", "0"))
+                    try:
+                        data = self._read_bytes(MAX_BOOK_BYTES)
+                        self._json(200, hub.books.save_upload(name, data))
+                    except HubError:
+                        raise
+                    except Exception as exc:
+                        _log("book_upload_error", name=name or "-", error=type(exc).__name__)
+                        raise HubError("bad_request", f"没放进书架：{exc}") from exc
+                    return
+                if path == "/v1/companion/story/timer":
+                    self._story_ok()
+                    body = self._read_json()
+                    self._json(200, hub.books.set_timer(body.get("minutes")))
+                    return
+                books_prefix = "/v1/companion/books/"
+                if path.startswith(books_prefix):
+                    self._story_ok()
+                    rest = [unquote(part) for part in path[len(books_prefix) :].split("/") if part]
+                    body = self._read_json()
+                    self._json(200, self._books_post(rest, body))
+                    return
+                jobs_prefix = "/v1/companion/read/jobs/"
+                if path.startswith(jobs_prefix):
+                    if not self._chats_ok():
+                        raise HubError("unauthorized", "Token 不正确")
+                    rest = path[len(jobs_prefix) :]
+                    parts = [unquote(p) for p in rest.split("/") if p]
+                    if len(parts) != 2:
+                        raise HubError("not_found", "未知接口")
+                    self._read_json()
+                    self._json(200, hub.companion_read_job_action(parts[0], parts[1]))
+                    return
+                if path == "/v1/telemetry":
+                    self._require_auth()
+                    body = self._read_json()
+                    self._json(200, hub.ingest_telemetry(body))
+                    return
+                if path == "/v1/leave":
+                    self._require_auth()
+                    self._read_json()
+                    self._json(200, hub.leave_home())
+                    return
+                if path == "/v1/presence":
+                    self._require_auth()
+                    body = self._read_json()
+                    self._json(200, hub.report_presence(str(body.get("state") or "")))
+                    return
+                if path == "/v1/at-desk":
+                    self._require_auth()
+                    body = self._read_json()
+                    present = body.get("present")
+                    if not isinstance(present, bool):
+                        raise HubError("bad_request", "present 必须是布尔值")
+                    away_sec = body.get("away_sec")
+                    if away_sec is not None and (
+                        not isinstance(away_sec, int)
+                        or isinstance(away_sec, bool)
+                        or away_sec < 0
+                    ):
+                        raise HubError("bad_request", "away_sec 必须是非负整数")
+                    self._json(200, hub.report_desk(present, away_sec))
+                    return
+                scenes_prefix = "/v1/scenes/"
+                if path.startswith(scenes_prefix):
+                    scene_id = unquote(path[len(scenes_prefix) :])
+                    if not scene_id or "/" in scene_id:
+                        raise HubError("not_found", "未知接口")
+                    self._require_auth()
+                    self._read_json()
+                    self._json(200, hub.run_scene(scene_id))
+                    return
+                prefix = "/v1/devices/"
+                suffix = "/command"
+                if not (path.startswith(prefix) and path.endswith(suffix)):
+                    raise HubError("not_found", "未知接口")
+                device_id = unquote(path[len(prefix) : -len(suffix)])
+                if not device_id or "/" in device_id:
+                    raise HubError("not_found", "未知接口")
+                self._require_auth()
+                self._limit("command")
+                body = self._read_json()
+                self._json(200, hub.command(device_id, body))
+            except HubError as exc:
+                self._json(exc.status, exc.body(), headers=exc.headers)
+
+        def _token_ok(self, got: str) -> bool:
+            """任一配置过的 token 命中就算过。
+
+            逐个比而不是先查表：hmac.compare_digest 的耗时和内容无关，但「比了几
+            次」会泄露「前面几枚对不上」，家用无所谓，既然写了就写对。
+            """
+            if not got:
+                return False
+            matched = False
+            for expected in hub.config.auth_values():
+                matched |= hmac.compare_digest(got, expected)
+            return matched
+
+        def _chats_ok(self) -> bool:
+            if is_local_client(self.client_address):
+                return True
+            header = self.headers.get("Authorization") or self.headers.get("authorization") or ""
+            bearer = header.strip()
+            if bearer.lower().startswith("bearer ") and self._token_ok(bearer[7:].strip()):
+                return True
+            return False
+
+        def _guard_guest(self) -> None:
+            """F26 访客模式：对话记录连页面带接口一律 404。
+
+            给 404 不给 403：对访客来说这些页是「不存在」，比「无权访问」
+            少一句「那隐藏的是什么」的追问。
+            """
+            if hub.guest.hiding():
+                raise HubError("not_found", "访客模式下不展示")
+
+        def _limit(self, bucket: str) -> None:
+            """按来源 IP 扣一次额度，超了抛 429。
+
+            本机也不放过：真烧起额度来时，本机跑的脚本比外面更可能是元凶。
+            """
+            gate = getattr(hub, "gate", None)
+            if gate is None:
+                return
+            wait = gate.check(bucket, self.client_address[0])
+            if wait <= 0:
+                return
+            seconds = max(1, math.ceil(wait))
+            raise HubError(
+                "too_many",
+                f"太频繁了，{seconds} 秒后再试",
+                headers={"Retry-After": str(seconds)},
+            )
+
+        def _lane(self, lane: str):
+            """慢请求占一个名额；满了抛 503 busy，让手机过两秒再问。"""
+            lanes = getattr(hub, "lanes", None)
+            if lanes is None:
+                return nullcontext()
+            return lanes.hold(lane)
+
+        def _require_auth(self) -> None:
+            header = self.headers.get("Authorization") or self.headers.get("authorization") or ""
+            bearer = header.strip()
+            got = bearer[7:].strip() if bearer.lower().startswith("bearer ") else ""
+            if not self._token_ok(got):
+                raise HubError("unauthorized", "Token 不正确")
+
+        def _story_ok(self) -> None:
+            if not self._chats_ok():
+                raise HubError("unauthorized", "Token 不正确")
+            if not hub.companion.config.enabled:
+                raise HubError("not_found", "未开启桌面伴侣")
+
+        def _books_get(self, path: str) -> dict[str, Any]:
+            if path == "/v1/companion/books":
+                return hub.books.list_books()
+            rest = [unquote(part) for part in path[len("/v1/companion/books/") :].split("/") if part]
+            if len(rest) == 1:
+                return hub.books.open_book(rest[0])
+            if len(rest) == 3 and rest[1] == "chapter":
+                try:
+                    index = int(rest[2])
+                except ValueError as exc:
+                    raise HubError("not_found", "没有这一章") from exc
+                return hub.books.chapter(rest[0], index)
+            raise HubError("not_found", "未知接口")
+
+        def _books_post(self, rest: list[str], body: dict[str, Any]) -> dict[str, Any]:
+            if len(rest) != 2:
+                raise HubError("not_found", "未知接口")
+            book_id, action = rest
+            if action == "play":
+                offset = body.get("offset")
+                if offset is None:
+                    return hub.books.play(book_id)
+                return hub.books.play(book_id, int(offset))
+            if action == "pause":
+                return hub.books.pause()
+            if action == "skip":
+                return hub.books.skip(book_id, body.get("dir", 1))
+            if action == "bookmark":
+                return hub.books.bookmark(book_id, int(body.get("offset") or 0))
+            raise HubError("not_found", "未知接口")
+
+        def _read_bytes(self, limit: int) -> bytes:
+            length_raw = self.headers.get("Content-Length", "0")
+            try:
+                length = int(length_raw)
+            except ValueError as exc:
+                raise HubError("bad_request", "请求体过大") from exc
+            if length < 0 or length > limit:
+                raise HubError("bad_request", "文件超过 32MB")
+            return self.rfile.read(length) if length else b""
+
+        def _read_json(self) -> dict[str, Any]:
+            length_raw = self.headers.get("Content-Length", "0")
+            try:
+                length = int(length_raw)
+            except ValueError as exc:
+                raise HubError("bad_request", "JSON 无效") from exc
+            if length < 0 or length > MAX_BODY:
+                raise HubError("bad_request", "请求体过大")
+            raw = self.rfile.read(length) if length else b"{}"
+            if not raw:
+                return {}
+            try:
+                data = json.loads(raw.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise HubError("bad_request", "JSON 无效") from exc
+            if not isinstance(data, dict):
+                raise HubError("bad_request", "JSON 必须是对象")
+            return data
+
+        def _maybe_gzip(self, payload: bytes) -> bytes:
+            """文本类响应按需压一发：3 秒一轮的 snapshot 也能省掉大半流量。"""
+
+            if len(payload) < GZIP_MIN:
+                return payload
+            accepted = (self.headers.get("Accept-Encoding") or "").lower()
+            if "gzip" not in accepted:
+                return payload
+            body = gzip.compress(payload, 6)
+            if len(body) >= len(payload):
+                return payload
+            self.send_header("Content-Encoding", "gzip")
+            self.send_header("Vary", "Accept-Encoding")
+            return body
+
+        def _json(
+            self,
+            status: int,
+            payload: dict[str, Any],
+            headers: dict[str, str] | None = None,
+        ) -> None:
+            data = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            data = self._maybe_gzip(data)
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "no-store")
+            for key, value in (headers or {}).items():
+                self.send_header(key, value)
+            self.end_headers()
+            self.wfile.write(data)
+
+        def _text(self, status: int, payload: str, content_type: str) -> None:
+            data = payload.encode("utf-8")
+            self.send_response(status)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(data)
+
+        def _html(self, status: int, payload: bytes, content_type: str) -> None:
+            self.send_response(status)
+            self.send_header("Content-Type", content_type)
+            payload = self._maybe_gzip(payload)
+            self.send_header("Content-Length", str(len(payload)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(payload)
+
+        def _bytes(
+            self,
+            status: int,
+            payload: bytes,
+            content_type: str,
+            filename: str | None = None,
+        ) -> None:
+            self.send_response(status)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(payload)))
+            self.send_header("Cache-Control", "no-store")
+            if filename:
+                safe = "".join(ch for ch in filename if ch.isalnum() or ch in "._-") or "shorekeeper.wav"
+                self.send_header("Content-Disposition", f'attachment; filename="{safe}"')
+            self.end_headers()
+            self.wfile.write(payload)
+
+        # 注意：这个方法必须留在 Handler 类的最后。check_protocol.py 把每个
+        # do_* 的源码段切到下一个 do_* 为止，放在前面会把后面 helper 里的
+        # GET 字面量误算进 DELETE 的账（比如 _books_get 的 books 路由）。
+        def do_DELETE(self) -> None:  # noqa: N802
+            parsed = urlparse(self.path)
+            path = parsed.path.rstrip("/") or "/"
+            try:
+                memory_prefix = "/v1/companion/memory/"
+                if path.startswith(memory_prefix):
+                    # F28：逐条删除。「记忆必须可见可撤销，否则会变成毛骨悚然」
+                    key = unquote(path[len(memory_prefix) :])
+                    if not key or "/" in key:
+                        raise HubError("not_found", "未知接口")
+                    self._guard_guest()
+                    if not self._chats_ok():
+                        raise HubError("unauthorized", "Token 不正确")
+                    self._json(200, hub.companion_memory_delete(key))
+                    return
+                diary_prefix = "/v1/companion/diary/"
+                if path.startswith(diary_prefix):
+                    # F29：删一天的日记。她写的东西必须可见可撤销，这是同一条底线
+                    day = unquote(path[len(diary_prefix) :])
+                    if not _DAY_RE.fullmatch(day):
+                        raise HubError("not_found", "未知接口")
+                    self._guard_guest()
+                    if not self._chats_ok():
+                        raise HubError("unauthorized", "Token 不正确")
+                    self._json(200, hub.companion_diary_delete(day))
+                    return
+                raise HubError("not_found", "未知接口")
+            except HubError as exc:
+                self._json(exc.status, exc.body(), headers=exc.headers)
+
+    return Handler
+
+
+class GuardedHTTPServer(ThreadingHTTPServer):
+    """连接数封顶：再多慢客户端也不会把线程堆到天上。"""
+
+    max_connections = MAX_CONNECTIONS
+    busy_timeout = BUSY_TIMEOUT
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._slots = threading.BoundedSemaphore(self.max_connections)
+
+    def process_request(self, request: Any, client_address: Any) -> None:
+        if not self._slots.acquire(timeout=self.busy_timeout):
+            _reject_busy(request)
+            return
+        try:
+            super().process_request(request, client_address)
+        except Exception:
+            self._slots.release()
+            raise
+
+    def process_request_thread(self, request: Any, client_address: Any) -> None:
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self._slots.release()
+
+
+def _reject_busy(request: Any) -> None:
+    head = (
+        b"HTTP/1.1 503 Service Unavailable\r\n"
+        b"Content-Type: application/json; charset=utf-8\r\n"
+        b"Content-Length: " + str(len(_BUSY_BODY)).encode("ascii") + b"\r\n"
+        b"Cache-Control: no-store\r\n"
+        b"Connection: close\r\n\r\n"
+    )
+    try:
+        request.sendall(head + _BUSY_BODY)
+    except OSError:
+        pass
+    finally:
+        try:
+            request.close()
+        except OSError:
+            pass
+
+
+def serve(hub: DockHub, *, blocking: bool = True) -> GuardedHTTPServer:
+    # 上次退出时还没收尾的派发任务，子进程可能还在跑（新会话不会被 hub 带走）
+    swept = hub.sweep_dispatch()
+    handler = make_handler(hub)
+    server = GuardedHTTPServer((hub.config.host, hub.config.port), handler)
+    ips = lan_ips()
+    print(f"岸亭 Hub v1  http://{ips[0]}:{hub.config.port}", flush=True)
+    for extra in ips[1:]:
+        print(f"             http://{extra}:{hub.config.port}", flush=True)
+    # 配置、聊天记录、朗读、日记这些页面都搬到控制台了（hub 自己那套 HTML 已删），
+    # 这里要是还打 /setup、/chats 就是四个 404 —— 看着像 Hub 挂了。
+    print(f"控制台       http://127.0.0.1:{CONSOLE_PORT}/  （配置、聊天、记忆、朗读、日记都在这儿）", flush=True)
+    if hub.config.path:
+        print(f"配置         {hub.config.path}", flush=True)
+    if swept:
+        print(f"派发台账     上次有 {swept} 个任务没收尾，已标记 killed", flush=True)
+    access = AccessLog.from_config(hub.config)
+    if access.directory is not None:
+        print(f"访问日志     {access.directory}/access-YYYY-MM-DD.log（留 {access.keep_days} 天）", flush=True)
+    else:
+        print("访问日志     关闭（DOCK_HUB_ACCESS_LOG=0，或没有配置文件）", flush=True)
+    if hub.uses_probe():
+        print(f"Windows 探针 {hub.config.probe.url}", flush=True)
+        snap = hub.pc_snapshot() or {}
+        hub.follow_pc(bool(snap.get("online")))
+    else:
+        if os.name == "nt":
+            print("Windows 防火墙请放行入站 TCP 17890：", flush=True)
+            print(
+                '  netsh advfirewall firewall add rule name="Shoreting Hub" '
+                "dir=in action=allow protocol=TCP localport=17890",
+                flush=True,
+            )
+        hub.follow_pc(True)
+    if not blocking:
+        return server
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\nHub 已停止")
+        hub.follow_pc(False)
+        server.server_close()
+    return server
