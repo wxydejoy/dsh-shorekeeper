@@ -16,10 +16,10 @@
 ## 步骤
 
 ### 阶段一：路线选型（3–5h）
-- [ ] 候选调研：企业微信/公众号合规 API · wechaty（各 puppet）· wechatferry/wcferry（Windows 挂机）
-- [ ] 各写 200 行内 PoC：收一条消息、发一条消息到文件传输助手
-- [ ] 决策记录：覆盖面、封号风险、部署形态（挂哪台机器）、维护成本
-- [ ] 若选 Windows 挂机：复用 win.lan 探针机器，出部署文档
+- [x] 候选调研：企业微信/公众号合规 API · wechaty（各 puppet）· wechatferry/wcferry（Windows 挂机）
+- [ ] 各写 200 行内 PoC：收一条消息、发一条消息到文件传输助手（⏸ 待 Windows 真机；按决策记录只做 wcferry + wechaty-donut 两条，企微路线已否决）
+- [x] 决策记录：覆盖面、封号风险、部署形态（挂哪台机器）、维护成本（`docs/decisions-wechat-route.md`：主选 wcferry，备选 donut/padlocal，否决企微；**签字区待漂泊者填写后才接真账号**）
+- [ ] 若选 Windows 挂机：复用 win.lan 探针机器，出部署文档（⏸ 随阶段二实现产出）
 
 ### 阶段二：插件实现（5–7h）
 - [ ] 消息桥：接入层收消息 → 归一化事件（会话/发送人/类型/摘要）
@@ -56,4 +56,9 @@
 | 隐私 | 脱敏默认开；消息只存摘要，全文即时取即用不落盘 |
 
 ## 验收记录
-（执行时追加）
+
+### 2026-11-03 · 值班 agent · 阶段一路线选型
+- 三路线调研完成（2026 现状核实）：wcferry 活跃维护但锁微信 3.9.11.25（4.0 不支持），hook 类有封号风险；wechaty web 协议基本废，可用 puppet（padlocal/donut）均收费；企微/公众号读不到个人微信收件箱，与目标错位，否决。
+- 产出 `docs/decisions-wechat-route.md`：主选 wcferry（免费/活跃/覆盖全/复用 win.lan 挂机），备选 donut·padlocal（付费 Plan B）；桥做独立小服务与插件 HTTP 解耦。
+- ⏸ 待真机：wcferry + wechaty-donut 两条 PoC（收一条消息、发一条到文件传输助手）；Windows 挂机部署文档随阶段二产出。
+- ⚠️ 决策记录含风险签字区，接真账号前必须由漂泊者本人填写。
