@@ -1,0 +1,4 @@
+# dsh-shorekeeper-desk-mi bundle patch：把 host 插件行插进 profile 层
+- insert:
+    - id: dsh-shorekeeper-desk-mi
+      name: 'dsh-shorekeeper-desk-mi'
