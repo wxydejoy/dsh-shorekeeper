@@ -1,7 +1,7 @@
 # T1 · 生态验证与 profile 底座
 
 ```
-状态: todo · owner: · 预估: 10–14 agent 小时 · 前置: 无
+状态: doing · owner: 值班 agent（ZCode）· 开始于: 2026-11-02 · 预估: 10–14 agent 小时 · 前置: 无
 分支: T1-ecosystem-trial
 ```
 
