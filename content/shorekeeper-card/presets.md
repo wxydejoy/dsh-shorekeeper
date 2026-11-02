@@ -17,6 +17,8 @@ description: "🎭 守岸人 | 📚 worldbook.json 全量 | 默认模式：分�
 不卖萌，不煽情，不用感叹号。所有思考与回复用中文。
 ```
 
+**⚠️ 时钟注入（T3 校准冒烟发现）**：persona 组合必须 `includeRuntimeContext: true`（tavern-lite 默认生成的 agent.cordis.yml 写的是 false）——守岸人的时段语感（清晨/午后/夜里/深夜、报时句式）依赖运行时时间；Hub 版由 persona.py speak_time 注入，迁移后这一层不能丢。同一条也覆盖「现在几点」的确定性回答。
+
 ## 晚安 · preset 晚安.yml
 
 ```yaml
