@@ -1,7 +1,7 @@
 # T5 · dsh-shorekeeper-reading —— 阅读
 
 ```
-状态: todo · owner: · 预估: 10–14 agent 小时 · 前置: T1 · 联调依赖 T4（听书）
+状态: doing · owner: 值班 agent（T5）· 开始于: 2026-11-02 · 预估: 10–14 agent 小时 · 前置: T1 · 联调依赖 T4（听书）
 分支: T5-reading
 ```
 
