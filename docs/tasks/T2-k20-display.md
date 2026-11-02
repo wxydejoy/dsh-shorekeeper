@@ -7,11 +7,11 @@
 
 ## 目标
 
-k20 安卓横屏摆件变成守岸人的「脸」：字幕、背景、模块编排、熄屏、媒体键、室内温湿度读数，全部注册为 agent 工具，真机逐步生效。
+k20 安卓横屏摆件变成守岸人的「脸」：字幕、背景、模块编排、熄屏、媒体键，全部注册为 agent 工具，真机逐步生效。
 
 ## 背景
 
-k20 只当「显示屏 + 麦克风」外设，大脑在 dsh。协议见 `reference/lan-protocol.md` 快照（鉴权、长轮询、时序）；背景上传链路对照 `reference/dock_hub/wallpaper.py`；传感器与媒体键对照 `reads.py` / `media.py`。原 dsh-desk-senses 已砍——室内温湿度是手机报的，归本插件。
+k20 只当「显示屏 + 麦克风」外设，大脑在 dsh。协议见 `reference/lan-protocol.md` 快照（鉴权、长轮询、时序）；背景上传链路对照 `reference/dock_hub/wallpaper.py`；媒体键对照 `media.py`。原 dsh-desk-senses 已砍——室内温湿度由米家温湿度计提供，走 dsh-mihome，k20 只显示。
 
 ## 步骤
 
@@ -22,7 +22,7 @@ k20 只当「显示屏 + 麦克风」外设，大脑在 dsh。协议见 `referen
 - [ ] mock k20 服务器（从 reference/server.py 提取响应形状）+ 单测覆盖协议层
 
 ### 阶段二：工具面（6–8h）
-- [ ] `k20.snapshot`：布局 + 背景 + 传感器（温湿度）+ 在线态
+- [ ] `k20.snapshot`：布局 + 背景 + 在线态
 - [ ] `k20.caption`：推/清字幕（守岸人说话同步的钩子留给 T4）
 - [ ] `k20.wallpaper`：图/视频上传与切换（对照 wallpaper.py 的上传即生效链路）
 - [ ] `k20.layout`：模块显隐/样式/透明度

@@ -9,20 +9,20 @@
 | 模块 | 行数 | 去向 | 承接方 | 状态 |
 |---|---|---|---|---|
 | `service.py`（编排核心） | 2663 | 拆解退役：编排逻辑由 dsh agent loop 接管 | T7 | ⚪ |
-| `config.py` | 2213 | 瘦身为 hub-lite（k20 网关 + 传感器采样两页配置） | T7 | ⚪ |
+| `config.py` | 2213 | 瘦身为 hub-lite（k20 网关单页配置） | T7 | ⚪ |
 | `companion_flow.py` | 902 | 对话流程 → dsh agent loop + voice-mode | T3/T4 | ⚪ |
 | `intents.py` | 859 | 意图分流 → 角色卡世界书规则 + 工具路由 system prompt | T3 | ⚪ |
 | `books.py` | 758 | 阅读能力 → dsh-shorekeeper-reading（书架/进度/摘抄/听书） | T5 | ⚪ |
-| `server.py` | 757 | HTTP 骨架退役；k20 长轮询与传感器端点保留最小实现 | T2/T7 | ⚪ |
+| `server.py` | 757 | HTTP 骨架退役；仅 k20 长轮询端点保留最小实现 | T2/T7 | ⚪ |
 | `companion_desk.py` | 731 | 桌面陪伴逻辑 → 守岸人角色卡内容 | T3 | ⚪ |
 | `persona.py` | 599 | 人格 → Tavern 角色卡 + 世界书 | T3 | ⚪ |
 | `mijia_bridge.py` + `mijia_catalog.py` | ~1000 | **整块退役**，由 dsh-mihome 直连替代 | T1 验证 / T7 退役 | ⚪ |
 | `setup_ui.py` | 970 | 配置向导退役 → dsh 设置卡片接管 | T7 | ⚪ |
 | `features.py` | 982 | 功能开关 → 各插件 Config namespace | T7 | ⚪ |
-| `reads.py` | 441 | 拆分：室外天气 → dsh-weather；室内温湿度 → dsh-shorekeeper-k20（手机上报，原 desk-senses 已砍） | T1/T2 | ⚪ |
+| `reads.py` | 441 | 拆分：室外天气 → dsh-weather；室内温湿度 → dsh-mihome（米家温湿度计读数） | T1 | ⚪ |
 | `calendar.py` | 397 | → dsh-calendar（CalDAV），历史数据迁移（migration/ 脚本） | T3 | ⚪ |
 | `diary.py` | 368 | → dsh-calendar-diary（xlsx），历史数据迁移（migration/ 脚本） | T3 | ⚪ |
-| `weekly.py` | ~300 | → 守岸人周报 skill（T3 内容工程，数据源 diary/calendar/reading） | T3 | ⚪ |
+| `weekly.py` | ~300 | → 守岸人周报 skill（T3 内容工程，数据源为 memory 记忆） | T3 | ⚪ |
 | `media.py` | ~250 | → @doitian/dsh-music 生态件 | T1 验证 | ⚪ |
 | `system_volume.py` | ~200 | 音量控制 → 归入 dsh-shorekeeper-k20 媒体面或生态件，T1 实测定 | T1/T2 | ⚪ |
 | `wallpaper.py` | ~200 | 背景上传链路 → `k20.wallpaper` 工具 | T2 | ⚪ |
@@ -43,8 +43,8 @@
 
 | 产物 | 任务 | 说明 |
 |---|---|---|
-| `plugins/dsh-shorekeeper-k20` | T2 | 安卓屏驱动：字幕/背景/编排/熄屏/媒体键/**室内温湿度读数** |
-| `content/shorekeeper-card/` | T3 | 角色卡 + 世界书 + 预设（人格内容工程，含周报/仪式 skill） |
+| `plugins/dsh-shorekeeper-k20` | T2 | 安卓屏驱动：字幕/背景/编排/熄屏/媒体键 |
+| `content/shorekeeper-card/` | T3 | 角色卡 + 世界书 + 预设（人格内容工程，含周报/仪式 skill；周报数据源 memory） |
 | `plugins/dsh-keeper-voice` | T4 | 克隆音色注册为 TTS provider + 打断闭环 |
 | `plugins/dsh-shorekeeper-reading` | T5 | 阅读：书架、进度、摘抄、听书（books.py 重生） |
 | `plugins/dsh-shorekeeper-wechat` | T6 | 微信接入：摘要/代读/审批代发 |

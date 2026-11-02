@@ -1,9 +1,9 @@
 # 岸亭 → DSH 原生替代 · 计划 v1
 
 > 2026-11-02 · 状态：**当前版本，取代 [v0](dsh-plugins-v0.md)（桥接方案已废弃）**
-> **修订 2026-11-02 晚**：插件名单调整——砍掉 dsh-desk-senses（传感器归 k20 插件）与 dsh-desk-life（日记/日历走生态件，周报降级为守岸人 skill）；新增 **dsh-shorekeeper-reading**（阅读）与 **dsh-shorekeeper-wechat**（微信接入）。本文 T5/T6 已按新名单重写。
+> **修订 2026-11-02 晚**：插件名单调整——砍掉 dsh-desk-senses（室内温湿度由米家温湿度计提供，走 dsh-mihome）与 dsh-desk-life（日记/日历走生态件；周报由 memory 记忆生成，降级为守岸人 skill）；新增 **dsh-shorekeeper-reading**（阅读）与 **dsh-shorekeeper-wechat**（微信接入）。本文 T5/T6 已按新名单重写。
 
-> 核心转变：**不做桥接。** 岸亭的「大脑、人格、感知、生活仪式」全部搬进 DSH 插件原生实现；只有「语音大模型、传感器采样」这类必须独立进程的，保留为外部程序由插件驱动。凡 DSH 生态已有插件的，优先复用生态件，不重复造轮子。
+> 核心转变：**不做桥接。** 岸亭的「大脑、人格、生活仪式」全部搬进 DSH 插件原生实现；只有「语音大模型」这类必须独立进程的，保留为外部程序由插件驱动。凡 DSH 生态已有插件的，优先复用生态件，不重复造轮子。
 
 ---
 
@@ -31,7 +31,7 @@
 
 | 缺口 | 为什么没有 | 自写形态 |
 |---|---|---|
-| **k20 安卓屏驱动** | 自有硬件 + 私有 LAN 协议 | `dsh-shorekeeper-k20`：字幕/背景/模块编排/熄屏/媒体键/室内温湿度读数 |
+| **k20 安卓屏驱动** | 自有硬件 + 私有 LAN 协议 | `dsh-shorekeeper-k20`：字幕/背景/模块编排/熄屏/媒体键 |
 | **守岸人克隆音色** | 自有 Qwen3-TTS 克隆服务（`:18100`） | `dsh-keeper-voice`：把克隆 TTS 注册成 voice-mode / dsh-tts 的自定义 provider（**用户认可：语音大模型作为独立程序保留**） |
 | **阅读** | 书架/进度/听书是私域能力 | `dsh-shorekeeper-reading`：书架、进度、摘抄、听书（books.py 重生） |
 | **微信接入** | 无现成生态件覆盖个人微信 | `dsh-shorekeeper-wechat`：消息摘要/代读/审批代发（路线选型见任务文档） |
@@ -40,7 +40,7 @@
 
 ### 1.3 岸亭退役清单（被上面替代后）
 
-`mijia_bridge/mijia_catalog`、`persona/companion_flow/intents`（大半）、`reads` 天气部分、`media/music`、`calendar/diary/weekly` 存储层、mini 监控、win 探针 CPU 上报、console 大部分（DSH Web UI + 插件卡片接管）。**Hub 缩减为：k20 屏网关 + 传感器采样**（见 T7）。
+`mijia_bridge/mijia_catalog`、`persona/companion_flow/intents`（大半）、`reads` 天气部分、`media/music`、`calendar/diary/weekly` 存储层、mini 监控、win 探针 CPU 上报、console 大部分（DSH Web UI + 插件卡片接管）。**Hub 缩减为：k20 屏网关**（见 T7；室内温湿度走米家，无需采样）。
 
 ---
 
@@ -54,7 +54,7 @@
  │    └── [自写件] dsh-shorekeeper-k20 / dsh-keeper-voice / dsh-shorekeeper-reading / dsh-shorekeeper-wechat
  │
  ├── keeper-tts（:18100，独立进程，Qwen3-TTS 克隆音色）← 保留的外部程序
- ├── hub（瘦身版 Python：k20 屏网关，含传感器透传）    ← 保留的外部程序
+ ├── hub（瘦身版 Python：k20 屏网关）                   ← 保留的外部程序
  └── k20 安卓屏 ← 只当「显示屏 + 麦克风」，大脑在 dsh
 ```
 
@@ -69,7 +69,6 @@ dsh-shorekeeper/
   plugins/
     dsh-shorekeeper-k20/         # T2 安卓屏驱动（最大的自写件）
     dsh-keeper-voice/          # T4 克隆音色 provider
-    desk-senses/           # T5 传感器桥
     desk-life/             # T6 仪式与迁移
   content/
     shorekeeper-card/      # T3 角色卡 + 世界书 + 预设（内容工程，非代码）
@@ -147,7 +146,7 @@ dsh-shorekeeper/
 2. 工具：`reading.shelf`（在读/读完/想读+进度）、`reading.progress`（守岸人代记「看到 217 页了」）、`reading.note`（摘抄与随想）、`reading.ask`（对读过的内容提问）。
 3. 听书模式：调 dsh-keeper-voice 分段流式朗读，可打断；睡前听书与 k20 字幕联动（可选）。
 4. 与记忆插件联动：守岸人能自然聊起「你上次读到那章了」。
-5. 周报素材：守岸人 skill 从本插件取「本周读了什么」。
+5. 阅读进展由守岸人主动记入 memory；周报中的「本周读了什么」由记忆支撑。
 
 **拓展方向**：阅读统计与年度书单；多格式电子书解析。
 **未来方向**：摘抄自动沉淀进长期记忆；守岸人写「给你的批注」。
@@ -170,7 +169,7 @@ dsh-shorekeeper/
 
 ### T7 · Hub 瘦身与退役（P1，8–12h）
 
-**目标**：Python 侧只留下真正需要的：k20 网关、传感器采样、keeper-tts；其余下线并保证回滚方案。
+**目标**：Python 侧只留下真正需要的：k20 网关、keeper-tts；其余下线并保证回滚方案（室内温湿度走米家，无需采样）。
 
 **步骤**：
 1. 盘点现状依赖矩阵（谁还在用 server.py 的哪些路由）。

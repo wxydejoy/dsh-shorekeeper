@@ -2,7 +2,7 @@
 
 守岸人从岸亭里搬了出来，住进 DeepSeek Harness（DSH），直接在漂泊者的 agent 里值班。
 
-[岸亭（Shoreting）](https://github.com/wxydejoy/Shoreting)是亭子：横屏安卓是脸和字幕，Mac Mini 当门口。而 **Shorekeeper 是大脑本身**——人格、感知、米家、语音、生活仪式，全部原生实现为 DSH 插件；凡 DSH 生态已有的能力（天气、监控、音乐、日历、记忆）直接复用社区插件，不重复造轮子。只有「语音大模型、传感器采样」这类必须独立进程的，保留为外部程序由插件驱动。
+[岸亭（Shoreting）](https://github.com/wxydejoy/Shoreting)是亭子：横屏安卓是脸和字幕，Mac Mini 当门口。而 **Shorekeeper 是大脑本身**——人格、感知、米家、语音、生活仪式，全部原生实现为 DSH 插件；凡 DSH 生态已有的能力（天气、监控、音乐、日历、记忆）直接复用社区插件，不重复造轮子。只有「语音大模型」这类必须独立进程的，保留为外部程序由插件驱动。
 
 > 名字取自守岸人的官方英文名 **Shorekeeper**。插件统一使用 `dsh-shorekeeper-*` 前缀。
 
@@ -16,7 +16,7 @@
  │    └── [自写件] dsh-shorekeeper-k20 / dsh-keeper-voice
  │                 dsh-shorekeeper-reading / dsh-shorekeeper-wechat
  ├── keeper-tts（:18100，独立进程，Qwen3-TTS 克隆音色）← 保留的外部程序
- ├── hub（瘦身版 Python：k20 屏网关，含传感器透传）    ← 保留的外部程序
+ ├── hub（瘦身版 Python：k20 屏网关）                   ← 保留的外部程序
  └── k20 安卓屏 ← 只当「显示屏 + 麦克风」，大脑在 dsh
 ```
 
@@ -24,7 +24,7 @@
 
 | 目录                       | 说明                                                                                                                |
 | ------------------------ | ----------------------------------------------------------------------------------------------------------------- |
-| [plugins/](plugins/)     | 自写插件：`dsh-shorekeeper-k20`（安卓屏驱动）、`dsh-keeper-voice`（克隆音色 provider）、`dsh-desk-senses`（传感器）、`dsh-desk-life`（周报/书架） |
+| [plugins/](plugins/)     | 自写插件：`dsh-shorekeeper-k20`（安卓屏驱动）、`dsh-keeper-voice`（克隆音色 provider）、`dsh-shorekeeper-reading`（阅读）、`dsh-shorekeeper-wechat`（微信接入） |
 | [content/](content/)     | 守岸人角色卡 + 世界书 + 预设（内容工程，宿主是 dsh-tavern）                                                                            |
 | [profile/](profile/)     | 生态插件安装清单 + cordis.patch.yml + 一键安装脚本                                                                              |
 | [migration/](migration/) | 岸亭 diary/weekly/books 数据导出导入脚本（一次性）                                                                               |
@@ -43,8 +43,8 @@ dsh-mihome（米家，MIT）· dsh-weather · dsh-vitals / dsh-pc-manager（监�
 | ------------------- | --------------------------------------------------------------- |
 | dsh-shorekeeper-k20 | k20 安卓屏驱动：字幕、背景、模块编排、熄屏、媒体键                                     |
 | dsh-keeper-voice    | 把 keeper-tts 克隆音色注册为 voice-mode / dsh-tts 的 TTS provider，打通打断闭环 |
-| dsh-desk-senses     | 室内温湿度等自有传感器桥 + 事件主动注入                                           |
-| dsh-desk-life       | 周报生成、书架进度、生活仪式 skill                                            |
+| dsh-shorekeeper-reading | 阅读：书架、进度、摘抄、听书（岸亭 books.py 重生）                            |
+| dsh-shorekeeper-wechat  | 微信接入：消息摘要、代读、审批代发                                          |
 
 ## 开发规范（要点）
 

@@ -25,7 +25,7 @@ persona.py / companion_flow.py / intents.py / companion_desk.py 的灵魂全部�
 - [ ] `content/shorekeeper-card/character.json`：Tavern V2 角色卡（人设、开场白、≥10 条示例对话）
 - [ ] `content/shorekeeper-card/worldbook.json`：书桌亭世界观、三机设备名录、生活仪式规则、意图分流规则（关键词触发省 token）
 - [ ] 多模式预设：值班（默认）/ 晚安 / 工作陪跑，切会话自动加载
-- [ ] 周报 skill：从 diary/calendar/reading 取数生成周报的流程指令
+- [ ] 周报 skill：守岸人从 memory 长期记忆中回顾本周（读了什么/做了什么/心情），生成周报的流程指令
 - [ ] 意图分流写入世界书全局常驻条目
 
 ### 阶段三：校准（4–7h）
