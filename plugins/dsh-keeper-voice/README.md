@@ -1,6 +1,6 @@
 # dsh-keeper-voice
 
-> 状态：**未开工（T4）** · 任务文档：[docs/tasks/T4-keeper-voice.md](../../docs/tasks/T4-keeper-voice.md)
+> 状态：**实现中（T4）——接入面落锤（dsh-tts custom provider）+ 三工具完成；barge-in 桥第二层与唤醒词决策 ⏸ 待 T1** · 任务文档：[docs/tasks/T4-keeper-voice.md](../../docs/tasks/T4-keeper-voice.md) · 决策记录：[docs/decisions-voice-provider.md](docs/decisions-voice-provider.md)
 
 守岸人的声音：把自有 Qwen3-TTS 克隆音色服务（`:18100`，独立进程保留）注册为 dsh-voice-mode / dsh-tts 的 TTS provider，让守岸人用她自己的声音说话，并打通「说话中被打断立即停」的闭环。
 
