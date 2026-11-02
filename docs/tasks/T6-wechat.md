@@ -22,7 +22,7 @@
 - [ ] 若选 Windows 挂机：复用 win.lan 探针机器，出部署文档（⏸ 随阶段二实现产出）
 
 ### 阶段二：插件实现（5–7h）
-- [x] 消息桥：接入层收消息 → 归一化事件（会话/发送人/类型/摘要）（桥契约已成文 `docs/bridge-contract.md`，桥本体是 Windows 挂机侧独立件 ⏸ 待实现）
+- [x] 消息桥：接入层收消息 → 归一化事件（会话/发送人/类型/摘要）（桥契约 `docs/bridge-contract.md` + **桥本体已实现** `bridge/`：HTTP 面/发送节流/白名单二次校验 12 测绿；wcferry 真身适配器收窄四方法 ⏸ 真机接线）
 - [x] `wechat.digest`：未读摘要按会话分组，人名脱敏可配（稳定别名，默认开）
 - [x] `wechat.read`：指定会话最近 N 条（验证码/转账类只提示不代读全文——红线在工具层整条隐藏）
 - [x] `wechat.send`：审批 + 联系人白名单 + 内容预览确认，白名单外硬拒（总闸 `sendEnabled` 默认关；host 审批接线 ⏸ T1）
@@ -68,3 +68,9 @@
 - 安全红线全部落进代码：脱敏默认开（SHA-256 稳定别名，跨次调用不漂）；验证码/转账类整条隐藏只提示（词表含「转了 500」类口语）；发送三重闸门（总闸默认关 → 白名单精确匹配硬拒 → host 审批 ⏸ T1）；拟发内容同样过红线。
 - 验证：`tsc --noEmit` 零错误；vitest 15/15（safety 纯函数 6 条 + mock 桥全链路 9 条：脱敏开关、红线隐藏、总闸、白名单、桥断降级）。
 - ⏸ 待办：桥本体实现（Windows/真机）、两路线 PoC、事件注入设计（待 T1）、渗透真机自测、dsh-mobile-notify 叠装。
+
+### 2026-11-03 · 值班 agent · 桥本体实现（二次补充）
+- `bridge/wechat_bridge.py`：stdlib HTTP 面（health 免鉴权 / digest 截断 120 字 / read limit 钳位 1–50 / send 节流 ≥3s + 桥侧白名单 403 纵深防御 + 409 wechat_offline）；适配器接口隔离微信交互。
+- `bridge/wcferry_adapter.py`：真身骨架，集成面收窄到 online/account/digest_groups/recent_messages/send 四方法，全部真机 TODO 标注；wcferry 不可导入时明确报错不静默。
+- `bridge/tests/test_bridge.py` 12 条全绿（health/digest/401/409/钳位/白名单 403/节流时长/坏体校验）；部署 README（锁版本/NSSM/同源白名单）。
+- ⏸ 剩余：wcferry 四方法真机填实（Windows + 微信 3.9.11.25）、两路线 PoC、事件注入、渗透自测。
