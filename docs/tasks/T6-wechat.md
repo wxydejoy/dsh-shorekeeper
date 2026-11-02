@@ -1,7 +1,7 @@
 # T6 · dsh-shorekeeper-wechat —— 微信接入
 
 ```
-状态: todo · owner: · 预估: 12–16 agent 小时 · 前置: T1
+状态: doing · owner: 值班 agent · 开始于: 2026-11-03 · 预估: 12–16 agent 小时 · 前置: T1
 分支: T6-wechat
 ```
 
