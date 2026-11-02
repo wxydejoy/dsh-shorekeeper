@@ -1,0 +1,35 @@
+# Shorekeeper profile 默认补丁草案（T8）。
+# 值全是占位/保守默认；真机校准（T1/T2/T4 验收）后逐项回填。
+# 分层规则见 dsh README：bundle patch → 本文件 → $DSH_HOME 补丁 → --patch。
+
+plugins:
+  dsh-shorekeeper-k20:
+    host: http://k20.lan          # ⏸ 真机填实际地址
+    port: 17890
+    token: change-me-to-a-long-random-string
+    backgroundPort: 17920
+    captionScale: 100
+    lockEnabled: false            # 高危；明确要用再开
+
+  dsh-keeper-voice:
+    baseUrl: http://127.0.0.1:18100
+    token: ''                     # keeper-tts --token 时必填
+    speed: 1.0
+    sampleText: 岸边的灯给你留着。
+
+  dsh-shorekeeper-reading:
+    dataDir: ''                   # 缺省 $DSH_HOME/data/reading
+
+  dsh-shorekeeper-wechat:
+    bridgeBaseUrl: http://win.lan:17901
+    bridgeToken: ''
+    maskNames: true
+    sendEnabled: false            # 默认只读不发
+    sendWhitelist: []
+
+  # ⏸ 生态插件段以 T1 验证结论为准；dsh-tts 的守岸人音色接线（T4 决策）：
+  # @goodandready/dsh-tts:
+  #   provider: custom
+  #   customBaseUrl: http://127.0.0.1:18100
+  #   customModel: keeper
+  #   customVoice: shorekeeper
