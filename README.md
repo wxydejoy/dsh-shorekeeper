@@ -54,6 +54,16 @@ dsh-mihome（米家，MIT）· dsh-weather · dsh-vitals / dsh-pc-manager（监�
 - 多实例开发：日常亭子实例（默认 3080）与实验实例（`--port 3081` + 独立 profile）分离，实验崩了重建即可
 - 改协议先改文档的岸亭规矩在这里同样生效：`reference/` 是岸亭 `docs/lan-protocol.md` 与关键源码的快照，协议漂了以岸亭仓库的原文档为准
 
+## 快速开始（草案 · 待 T8 真机演练校准）
+
+前置：macOS（Mac Mini）· Homebrew · Node ≥ 22
+
+1. 克隆本仓库，`bash profile/install.sh`——自动钉 `@deepseek-ai/dsh@0.2.1-rc.5`、建 `shorekeeper` profile、按 T1 钉版清单装 10 件生态插件、链接 4 个自写插件、写入 cordis.patch 默认值
+2. 凭据（T1 清单，装完必做）：OpenRouter key · CalDAV 账号 · 米家扫码 · 网易云（可选）· macOS 通知授权
+3. 启动：`dsh --profile shorekeeper`（日常 3080；实验 `--profile shorekeeper --port 3081`）
+4. 真机走查：[docs/e2e-scenarios.md](docs/e2e-scenarios.md) 十条场景逐条过
+5. 升级 dsh 先读 [docs/compat-matrix.md](docs/compat-matrix.md)，绿了才动版本钉
+
 ## 计划与进度
 
 完整方案见 [docs/plans/dsh-plugins-v1.md](docs/plans/dsh-plugins-v1.md)：8 个任务（T1 生态验证 → T8 发布 v1.0），里程碑 M1 屏驱动 → M2 守岸人回来 → M3 亭子完全体。每任务一子分支，合回 `main`。

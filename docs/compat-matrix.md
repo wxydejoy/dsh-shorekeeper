@@ -19,7 +19,7 @@
 | dsh-tools defineTool DSL | ✅ 实测（T2/T4/T5/T6 插件 typecheck+单测） | ⏸ |
 | ctx.tools.register | ✅ | ⏸ |
 | Schemastery Config（默认导出） | ✅ | ⏸ |
-| voice-mode 与 rc.5 共装 | ⚠️ voice-mode@0.7.34 拖 0.2.0-rc.2 旧内部，ERESOLVE，需 legacy 安装——**T1 专测共装与功能** | ⏸ |
+| voice-mode 与 rc.5 共装 | ✅ profile 内共装已由 T1 实测（isolated linker 配方 D3，已入钉版清单）；⚠️ npm devDep 侧仍 ERESOLVE——用 `--legacy-peer-deps` + 显式钉 dsh-tools 全套 peers（T4 验收记录） | ⏸ |
 | dsh-tts custom provider | ✅（配置接线路径确认，真机 ⏸） | ⏸ |
 | SDK Events（dispose 钩子） | ❌ 无 dispose 事件——watcher 卸载接线悬置（T2 TODO） | ⏸ 关注是否补生命周期事件 |
 | ctx.settings.installSection | ❌ 未暴露——设置卡片待 T1 校准 | ⏸ |
