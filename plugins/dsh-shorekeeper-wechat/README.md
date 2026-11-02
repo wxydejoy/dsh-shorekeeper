@@ -1,6 +1,6 @@
 # dsh-shorekeeper-wechat
 
-> 状态：**未开工（T6）** · 任务文档：[docs/tasks/T6-wechat.md](../../docs/tasks/T6-wechat.md)
+> 状态：**实现中（T6）——路线已定（wcferry 主选，签字区待漂泊者）+ 插件三工具完成；桥实现与真机验证 ⏸** · 任务文档：[docs/tasks/T6-wechat.md](../../docs/tasks/T6-wechat.md) · 路线决策：[docs/decisions-wechat-route.md](docs/decisions-wechat-route.md) · 桥契约：[docs/bridge-contract.md](docs/bridge-contract.md)
 
 微信接入：让守岸人知道微信里发生了什么——新消息摘要进上下文、按需代读、经确认代发。
 
@@ -27,3 +27,10 @@
 
 - 新消息 → 守岸人可决定是否打断/推屏（和 voice-mode、k20 联动）
 - 通知兜底可叠 dsh-mobile-notify（Bark/ntfy）
+
+## 实现说明（2026-11-03 · 阶段二）
+
+- 插件与桥 **HTTP 解耦**：桥（Windows 挂机侧 wcferry 小服务，契约 [docs/bridge-contract.md](docs/bridge-contract.md)）崩了可重启不丢状态；桥不可达 → 工具层优雅降级
+- 三工具落地：`wechat.digest`（分组摘要 + 人名脱敏默认开，稳定别名不漂）/ `wechat.read`（验证码/转账类整条隐藏只提示）/ `wechat.send`（三重闸门：总闸默认关 → 白名单硬拒 → host 审批 ⏸ T1；拟发内容也过红线）
+- 安全层纯函数（`src/safety.ts`）：脱敏/敏感识别/白名单各自单测；全部 15 条测试绿，`tsc --noEmit` 零错
+- ⏸ 待办：桥实现（Windows 侧，按契约）+ PoC（wcferry/donut 两条，真机）+ 事件注入（digest 进上下文的频率策略，待 T1 后按 voice-mode 集成面设计）+ 通知兜底叠装说明
