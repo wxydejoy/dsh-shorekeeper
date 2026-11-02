@@ -13,13 +13,14 @@
   python3 wechat_bridge.py --token <≥8字符> [--port 17901] [--host 0.0.0.0]
                            [--whitelist "wxid_a,wxid_b"] [--adapter fake|wcferry]
                            [--send-interval 3]
-监听非回环地址必须带 --token。
+监听非回环地址必须带 --token（或环境变量 BRIDGE_TOKEN，避免 ps 里泄露口令）。
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -209,7 +210,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="守岸人微信桥")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=17901)
-    parser.add_argument("--token", default="", help="Bearer 口令；监听非回环必须设置")
+    parser.add_argument(
+        "--token",
+        default=os.environ.get("BRIDGE_TOKEN", ""),
+        help="Bearer 口令；监听非回环必须设置（可用环境变量 BRIDGE_TOKEN）",
+    )
     parser.add_argument("--whitelist", default="", help="桥侧白名单（逗号分隔 contactId；空=不在此层校验）")
     parser.add_argument("--adapter", default="fake", choices=["fake", "wcferry"])
     parser.add_argument("--send-interval", type=float, default=3.0, help="两次发送最小间隔秒")
