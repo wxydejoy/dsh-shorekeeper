@@ -7,39 +7,46 @@ import { createReadingTools } from '../src/tools.ts'
 
 let dir: string
 
+// 夹具 = migration/export_books.py render_shelf 的真实输出（2026-11-03 真数据导出后照抄）
 const SHELF = {
-  schema_version: 1,
+  version: 1,
+  imported_from: 'dock-hub books (migration/export_books.py)',
   books: [
     {
       id: '我合成了全世界',
       title: '我合成了全世界',
       author: '王自律',
-      source_file: '我合成了全世界(王自律).txt',
-      bytes: 100,
-      sha256: null,
       status: 'reading',
-      chars: 1000,
-      chapters: [{ index: 0, title: '第一章', start: 0, end: 1000 }],
-      fidelity: 'approx',
-      percent: 21.7,
-      current_chapter: { index: 0, title: '第一章' },
-      encoding: 'utf-8',
-      migrated: { book_id: '我合成了全世界(王自律).txt', offset: 217, updated_at: 1793629687 },
+      source: 'migration',
+      added_at: 1793641666,
+      last_read_at: 1793641666,
+      finished_at: null,
+      progress: {
+        kind: 'char',
+        char_offset: 596983,
+        percent: 17.64,
+        chapter_index: 217,
+        chapter_title: '第221章 终极掌控2',
+        fidelity: 'approx',
+      },
+      migrated: {
+        book_id: '我合成了全世界(王自律).txt',
+        source_file: '我合成了全世界(王自律).txt',
+        sha256: 'cebb4449f41b77f0803061905d57ce064fc0514effd018a004fa6c5176b8c47a',
+        bytes: 9793913,
+        oversize: false,
+      },
     },
     {
       id: '合成岸边',
       title: '合成岸边',
       author: null,
-      source_file: '合成岸边.txt',
-      bytes: 10,
-      sha256: null,
       status: 'wishlist',
-      chars: null,
-      chapters: [],
-      fidelity: null,
-      percent: null,
-      current_chapter: null,
-      encoding: null,
+      source: 'migration',
+      added_at: null,
+      last_read_at: null,
+      finished_at: null,
+      progress: null,
     },
   ],
 }
@@ -70,10 +77,10 @@ function byName(name: string) {
 }
 
 describe('reading.shelf', () => {
-  it('列出书架与进度', async () => {
+  it('列出书架与进度（真实 schema）', async () => {
     const result = (await byName('reading.shelf').execute({}, {} as never)) as { summary: string; total: number }
     expect(result.total).toBe(2)
-    expect(result.summary).toContain('我合成了全世界 · 王自律 · 读到 21.7%')
+    expect(result.summary).toContain('我合成了全世界 · 王自律 · 读到 17.64%')
     expect(result.summary).toContain('想读')
   })
 
@@ -94,11 +101,19 @@ describe('reading.progress', () => {
     const data = store()
     expect(data.books[0]?.status).toBe('reading')
     expect(data.getProgress('我合成了全世界')?.page).toBe(217)
+    expect(data.getProgress('我合成了全世界')?.char_offset).toBe(596983) // 迁移书签保留
   })
 
-  it('percent 到 100 自动读完', async () => {
+  it('percent 到 100 自动读完并盖 finished_at', async () => {
     await byName('reading.progress').execute({ book: '我合成了全世界', percent: 100 }, {} as never)
-    expect(store().books[0]?.status).toBe('finished')
+    const book = store().books[0]
+    expect(book?.status).toBe('finished')
+    expect(book?.finished_at).not.toBeNull()
+  })
+
+  it('想读的书一记进度就转在读', async () => {
+    await byName('reading.progress').execute({ book: '合成岸边', percent: 1 }, {} as never)
+    expect(store().books[1]?.status).toBe('reading')
   })
 
   it('书名歧义 → 请说具体些', async () => {

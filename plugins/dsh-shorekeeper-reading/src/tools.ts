@@ -11,15 +11,15 @@ export interface ReadingToolDeps {
   store: ShelfStore
 }
 
-function describeBook(book: Book, progress?: { page?: number; percent?: number; chapter_title?: string }): string {
+function describeBook(book: Book): string {
   const bits = [book.title]
   if (book.author) bits.push(book.author)
   if (book.status === 'finished') bits.push('已读完')
   else if (book.status === 'wishlist') bits.push('想读')
-  else if (book.percent !== undefined && book.percent !== null) bits.push(`读到 ${book.percent}%`)
+  else if (book.progress?.percent !== undefined && book.progress.percent !== null) bits.push(`读到 ${book.progress.percent}%`)
   else if (book.status === 'reading') bits.push('在读')
-  if (progress?.page !== undefined) bits.push(`第 ${progress.page} 页`)
-  if (progress?.chapter_title) bits.push(progress.chapter_title)
+  if (book.progress?.page !== undefined) bits.push(`第 ${book.progress.page} 页`)
+  if (book.progress?.chapter_title) bits.push(book.progress.chapter_title)
   return bits.join(' · ')
 }
 
@@ -49,7 +49,7 @@ export function createReadingTools(deps: ReadingToolDeps): ToolDefinition[] {
           title: book.title,
           author: book.author,
           status: book.status,
-          percent: book.percent,
+          percent: book.progress?.percent ?? null,
         })) satisfies Json,
         summary: lines.length > 0 ? `书架 ${books.length} 本：${lines.join('；')}` : '书架还是空的。',
       } satisfies Json
@@ -98,7 +98,7 @@ export function createReadingTools(deps: ReadingToolDeps): ToolDefinition[] {
         book: book.id,
         progress: JSON.parse(JSON.stringify(saved)) as Json,
         summary: `记下了：《${book.title}》${saved.page !== undefined ? `第 ${saved.page} 页` : ''}${
-          saved.percent !== undefined ? `（${saved.percent}%）` : ''
+          saved.percent !== undefined && saved.percent !== null ? `（${saved.percent}%）` : ''
         }${saved.chapter_title ? `，${saved.chapter_title}` : ''}`,
       } satisfies Json
     },
