@@ -84,7 +84,7 @@ export function createDeskMiTools(deps: DeskMiToolDeps): ToolDefinition[] {
   const deskMiSensor = defineTool({
     name: 'desk_mi_sensor',
     description:
-      '读温湿度计实时读数。「现在屋里多少度」「潮不潮」走这里。不传 name 时读默认传感器（配置 defaultSensor）。',
+      '读室内温湿度实时读数。凡问「屋里/室内/房间多少度、几度、潮不潮、干不干燥、湿度」，或提到冷热体感想看实况，必须走这里，不要用室外天气估算替代。不传 name 时读默认传感器（配置 defaultSensor）。',
     parameters: {
       name: { type: 'string', description: '传感器名（配置里的映射名，例如「卧室」）；缺省用默认' },
     },
