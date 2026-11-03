@@ -89,6 +89,7 @@
 **合并顺序建议**：`main` ← `fix/w1-check-all-green` ← `fix/w2-node-ts-compat`（栈式，前者和后者依次合）；`docs/wechat-route-v2` 与 `chore/w3-untrack-worktrees` 各自并入 main（互不相交，无冲突预期）。
 
 **合并后必做**：在合并结果上重跑 `bash scripts/check-all.sh`（预期 12 项全绿）→ 绿了才推。
+**✅ 已执行（2026-11-04 01:1x，本地合并，未 push）**：main ← w1 → w2 → chore → docs 四路合并零冲突，main=37a3372，合并结果上 check-all **12 项全绿**、工作树干净——**技术侧全部就绪，push 只差漂泊者一句话**。dock main 同理（2 笔迁移提交，1188+8 测绿）。
 
 **测试证据**：上表首行；此外 W2/W10/W11 的功能冒烟均为真机实证（浏览器+真数据）。
 
