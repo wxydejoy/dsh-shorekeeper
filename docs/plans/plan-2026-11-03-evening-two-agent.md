@@ -12,10 +12,11 @@
 | # | 待办 | 来源 | 验收线 | 依赖 |
 |---|---|---|---|---|
 | W1 | k20 测试 4 处类型错修红；`check-all.sh` 补进 desk-mi，全绿 | 夜计划 P0 | `bash scripts/check-all.sh` 输出全部绿色 | 无 |
-| W2 | 四个自写插件装进 :3081（k20 / keeper-voice / reading / wechat）+ 重启冒烟 | 夜计划 P1；确认单 C3 | 四件冒烟各过：k20 工具面可见、reading 读真实书架、`/v1/audio/speech` 出音频、wechat 待配置不崩 | W1 |
+| W2 | 四个自写插件装进 :3081（k20 / keeper-voice / reading / ~~wechat~~）+ 重启冒烟 | 夜计划 P1；确认单 C3 | 三件冒烟各过：k20 工具面可见、reading 读真实书架、`/v1/audio/speech` 出音频；**自写 wechat 插件跳过**（与新路线重叠，微信入口已由 dsh-plugin-weixin 承担） | W1 |
 | W3 | 任务书状态头对齐 + 清 `.worktrees` 误跟踪文件 + refactor-map 状态列 | 夜计划 P2 | 状态与 git log 一致，`git status` 干净 | 无 |
-| W4 | **T6 装前体检**：`dsh-wechat@0.15.0` 装进实验 profile，看 boot log 有无 disable/报错；不过则依次试 dsh-plugin-weixin@1.4.3 → dsh-wechat-plugin@0.47.0 | v2 路线 18:30 更新 | 体检报告落 docs：加载成功/失败 + 原因 | 无 |
-| W5 | **T6 接线**：扫码（漂泊者本人）→ 联系人 allowlist → 工具审批链路验证 | 确认单 A1/D5、C4 | 手机微信私聊她能按守岸人口吻回；白名单外不答；重启会话续 | W2、W4、漂泊者扫码 |
+| W4 | **T6 装前体检**：`dsh-wechat@0.15.0` 装进实验 profile，看 boot log 有无 disable/报错；不过则依次试 dsh-plugin-weixin@1.4.3 → dsh-wechat-plugin@0.47.0 | v2 路线 18:30 更新 | 体检报告落 docs：加载成功/失败 + 原因 | ✅ **已完成（漂泊者，18:3x）**：实装 **dsh-plugin-weixin@1.4.3** 进 **web profile**（:3090）并扫码打通——体检结论：iLink 个人微信路线可用，选型落地即此包 |
+| W4a | ~~装进 shorekeeper-lab~~（已取消）→ **人格绑定**：在 web profile 上把 T3 守岸人角色卡/预设绑到微信会话，让微信那头的会话以守岸人口吻说话 | 18:33 漂泊者拍板：不用独立 profile，就用 sessions 里的微信会话当守岸人对话 | 微信私聊回复是守岸人口吻（角色卡/世界书生效） | 无 |
+| W5 | **T6 接线验收**：联系人 allowlist → 工具审批链路验证 | 确认单 A1/D5、C4 | 手机微信私聊她按**守岸人**口吻回；白名单外不答；重启会话续 | W4a |
 | W6 | **k20 真机联调**：k20.lan（管理员授权已给）——字幕、屏状态、背景/布局/媒体键/熄屏六工具真机各过一遍 | 确认单 C3 | 六工具真机各出一次可观察效果 | W2 |
 | W7 | **唤醒词路线甲落地**：k20 本地「小岸」唤醒 → 推文本进会话 | 确认单 A2 | 真机喊「小岸」→ 屏上出字并进入会话 | W6 |
 | W8 | **dock 手动迁移**（两分支不合，按 A3）：从 `hub-slim` 摘 caption/layout/lock 三条路由；从 `tts-openai-endpoint` 摘 keeper-tts 的 OpenAI 兼容端点；分支保留原样 | 确认单 A3 | 摘出的改动以独立提交落在 dock main，dock 测试全绿 | 无 |
@@ -32,13 +33,16 @@
 
 按「**仓库实例** vs **真机外部**」切，两人互不踩同一台机器上的同一层：
 
-### 甲 · 仓库与实例线（Mac 本机，dsh-shorekeeper 仓库 + :3081）
+### 甲 · 仓库与实例线（Mac 本机，dsh-shorekeeper 仓库 + :3081 + :3090）
 
-负责：**W1 → W2 → W3**，然后 **W4 → W5**（T6 全程）、**W10、W11、W12**。
+负责：**W1 → W2 → W3**，然后 **W4a → W5**（人格绑定与验收）、**W10、W11、W12**。
 
 - 特点：全在仓库和 profile 里打转，改代码、装插件、跑测试、写文档。
-- 关键产出：全绿的 check-all、四个插件进实例、T6 体检报告与接线验收、确认单 B5/W11 回填。
-- 交接物：W2 完成后冒烟记录（四件各一行证据），给乙的 W6 用。
+- 关键产出：全绿的 check-all、自写插件进实例、微信会话人格绑定与验收、确认单 B5/W11 回填。
+- 交接物：W2 完成后冒烟记录（三件各一行证据），给乙的 W6 用。
+
+> **shorekeeper-lab 定位（18:33 起）**：不再是守岸人主实例，微信/对话入口以 **web profile（:3090）** 为准。
+> 实例本身不拆，留作 headless 校准等实验用；其上的人格资产（角色卡/预设）随 W4a 迁绑到 web profile。
 
 ### 乙 · 真机与外部线（k20 真机 + dock 仓库 + TTS）
 
@@ -74,4 +78,5 @@
 
 ## 四、进度（两人逐项追加，格式：`W# · 时间 · 谁 · 一行结论`）
 
-（空）
+- W4 · 2026-11-03 18:32 · 漂泊者 · 部分完成但装错位置：dsh-plugin-weixin 装进了 web profile 并扫码打通（体检结论：iLink 路线可用）；**shorekeeper-lab 未装**，需 W4a 纠偏 + W5 重接，web profile 那份去留待定（默认保留，与守岸人线互不影响）
+- 定向 · 2026-11-03 18:33 · 漂泊者 · **不再用独立 profile**：就用 web profile 里 sessions 的微信会话作为守岸人对话；W4a 从「装进 shorekeeper-lab」改为「web profile 上做人格绑定」，W2 跳过自写 wechat 插件，shorekeeper-lab 降级为实验实例（不拆）
