@@ -86,6 +86,8 @@ export interface Snapshot {
   phone?: PhoneState
   /** 协议增补提案（docs/protocol-addendum.md）：k20 屏网关提供的字幕状态 */
   caption?: CaptionState | null
+  /** 协议增补提案：/v1/lock 请求后的熄屏状态 */
+  lock?: LockState | null
   [key: string]: unknown
 }
 
@@ -98,15 +100,40 @@ export interface PhoneState {
   layout?: PhoneLayout
 }
 
+/** 布局槽位矩形（snapshot 回读侧：服务端合并后的全量字段） */
+export interface PhoneModuleRect {
+  x: number
+  y: number
+  w: number
+  h: number
+  visible: boolean
+  chrome?: boolean
+}
+
 export interface PhoneLayout {
   rev: number
-  modules: Record<string, { x: number; y: number; w: number; h: number; visible: boolean; chrome?: boolean }>
+  modules: Record<string, PhoneModuleRect>
+}
+
+/** /v1/phone/layout 写入体：rev 可省（服务端只增不减），槽位矩形可部分给，缺省字段服务端保留现值（docs/protocol-addendum.md） */
+export type PhoneModulePatch = Partial<PhoneModuleRect>
+
+export interface PhoneLayoutPatch {
+  rev?: number
+  modules: Record<string, PhoneModulePatch>
 }
 
 export interface CaptionState {
   text: string
   /** 字幕上屏时间（UTC ISO-8601），安卓用于去重 */
   at: string
+  /** 下发时应用的字号缩放（60–140），网关回读；缺省为屏上当前值 */
+  scale?: number
+}
+
+/** 熄屏请求状态（协议增补提案：POST /v1/lock 后并入 snapshot） */
+export interface LockState {
+  requested_at: string
 }
 
 export interface DeviceCommandResult {

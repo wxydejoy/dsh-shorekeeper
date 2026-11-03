@@ -6,7 +6,7 @@
  * 工具层据此优雅降级。
  */
 
-import type { PhoneLayout } from './types.ts'
+import type { PhoneLayoutPatch } from './types.ts'
 import { HubRequestError, type HubClientOptions } from './hub-client.ts'
 
 export interface CaptionStyle {
@@ -39,8 +39,8 @@ export class GatewayClient {
     return this.post('/v1/caption', { clear: true })
   }
 
-  /** 写入主屏布局（服务端负责把 layout.rev 递增；安卓按 rev 变大才套用） */
-  async setPhoneLayout(layout: PhoneLayout): Promise<{ ok: true }> {
+  /** 写入主屏布局（服务端负责把 layout.rev 递增；安卓按 rev 变大才套用。槽位矩形可部分给，缺省字段服务端保留现值） */
+  async setPhoneLayout(layout: PhoneLayoutPatch): Promise<{ ok: true }> {
     return this.post('/v1/phone/layout', { layout })
   }
 

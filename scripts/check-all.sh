@@ -8,7 +8,7 @@ FAIL=0
 
 say() { printf '%s\n' "$*"; }
 
-for p in dsh-shorekeeper-k20 dsh-keeper-voice dsh-shorekeeper-reading dsh-shorekeeper-wechat; do
+for p in dsh-shorekeeper-desk-mi dsh-shorekeeper-k20 dsh-keeper-voice dsh-shorekeeper-reading dsh-shorekeeper-wechat; do
   cd "$ROOT/plugins/$p"
   if [ ! -d node_modules ]; then
     npm install --no-fund --no-audit --legacy-peer-deps >/dev/null 2>&1
