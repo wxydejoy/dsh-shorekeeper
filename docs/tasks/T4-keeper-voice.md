@@ -13,6 +13,8 @@
 
 keeper-tts 是 Python 独立进程（`reference/tts/server.py` 快照），本任务在 keeper-tts 侧加 OpenAI 兼容端点，插件侧做 provider 注册与打断桥。打断时序对照岸亭 docs/companion.md：边写边念、打断停播、反问自动再听。
 
+> **T1 前置结论已出（2026-11-03，D13）**：dsh-voice-mode 0.7.34 的 `ttsEngine` 为封闭枚举 `edge|vits|kokoro`（z.union 源码实锤），**无自定义/OpenAI 兼容 TTS provider 扩展点**。阶段一的问题已有答案——「注册为 voice-mode provider」此路不通。可行路线二选一：① fork voice-mode 加自定义引擎（保留其 STT/VAD/字幕/唤醒词全栈）；② 全量自写语音插件（STT/打断/字幕自己来，可参考 voice-mode 实现）。voice-mode 其余能力（流式 ASR、Silero VAD 帧级 barge-in、回声门控、让位语义）质量很高，倾向 ①。阶段一剩余工作：确认 fork 的维护成本与 voice-mode 更新跟进策略。
+
 ## 步骤
 
 ### 阶段一：接入面确认（2h）

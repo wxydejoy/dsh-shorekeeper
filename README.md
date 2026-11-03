@@ -35,16 +35,16 @@
 
 ### 复用的生态插件（T1 钉版 · 2026-11-03，见 profile/README.md 与 docs/decisions.md）
 
-dsh-mijia-sidebar 1.0.1（米家面板；无 agent 工具面，控灯走薄工具层待接）· dsh-glass-weather 0.3.0 + dsh-weather-panel 1.8.0（天气）· dsh-vitals 0.1.19（监控）· @doitian/dsh-music 1.2.0 · dsh-voice-mode 0.7.34（全双工语音：STT + barge-in + 字幕；无自定义 TTS 点，TTS 面归 dsh-tts）· dsh-tavern 2.7.26（角色卡宿主）· feiyu-memory 4.0.2（人格+日记记忆）· dsh-calendar 0.14.3 · dsh-notify-me 1.17.0（通知）
+dsh-mijia-sidebar 1.0.1（米家面板；无 agent 工具面，控灯/读数走 dsh-shorekeeper-desk-mi，T9 已验）· dsh-glass-weather 0.3.0 + dsh-weather-panel 1.8.0（天气）· dsh-vitals 0.1.19（监控）· @doitian/dsh-music 1.2.0 · dsh-voice-mode 0.7.34（全双工语音：STT + barge-in + 字幕；无自定义 TTS 点，TTS 面归 dsh-tts）· dsh-tavern 2.7.26（角色卡宿主）· feiyu-memory 4.0.2（人格+日记记忆）· dsh-calendar 0.14.3 · dsh-notify-me 1.17.0（通知）
 
-> 判死/出局（T1 D4–D15）：dsh-weather · dsh-pc-manager · dsh-system-hud · dsh-calendar-diary（日记归 feiyu）· dsh-mobile-notify（npm 无此包）· memsearch（误会）· dsh-roleplay
+> T1 实测定稿名单（钉版本见 [profile/README.md](profile/README.md)）。判死/出局（T1 D4–D15）：dsh-weather · dsh-pc-manager · dsh-system-hud · dsh-calendar-diary（日记归 feiyu）· dsh-mobile-notify（npm 无此包）· memsearch（误会）· dsh-roleplay
 
 ### 自写插件
 
 | 插件                  | 职责                                                              |
 | ------------------- | --------------------------------------------------------------- |
 | dsh-shorekeeper-k20 | k20 安卓屏驱动：字幕、背景、模块编排、熄屏、媒体键                                     |
-| dsh-keeper-voice    | 把 keeper-tts 克隆音色注册为 voice-mode / dsh-tts 的 TTS provider，打通打断闭环 |
+| dsh-keeper-voice    | keeper-tts（Qwen3-TTS 克隆音色）接入语音链路，打通打断闭环。**T1 变更**：voice-mode 的 ttsEngine 是封闭枚举（edge/vits/kokoro），无自定义 provider 扩展点（D13）——T4 全量自写语音链路或 fork voice-mode，二选一由 T4 定 |
 | dsh-shorekeeper-reading | 阅读：书架、进度、摘抄、听书（岸亭 books.py 重生）                            |
 | dsh-shorekeeper-wechat  | 微信接入：消息摘要、代读、审批代发                                          |
 
