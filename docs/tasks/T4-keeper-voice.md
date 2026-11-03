@@ -32,8 +32,8 @@ keeper-tts 是 Python 独立进程（`reference/tts/server.py` 快照），本�
 - [ ] 字幕联动：speak 时调 T2 的 `k20.caption`（⏸ 待 T1 真机后接 hooks；k20.caption 走 T2 的协议增补提案路由）
 
 ### 阶段四：唤醒词决策（2–4h）
-- [ ] 对比：安卓端保留「小岸」唤醒→推文本 vs voice-mode 免提模式全接管（⏸ 待 T1 实测 voice-mode 免提模式）
-- [ ] 决策记录 + 实现所选路径（可能涉及 android 端小改，走岸亭仓库另开分支）（⏸）
+- [ ] 对比：安卓端保留「小岸」唤醒→推文本 vs voice-mode 免提模式全接管（对比框架已成文 `docs/decisions-wakeword.md`；实测数据 ⏸ 待 T1 人工项 3）
+- [ ] 决策记录 + 实现所选路径（可能涉及 android 端小改，走岸亭仓库另开分支）（⏸ 框架就绪，等实测填空）
 - [ ] 打断闭环真机验收（⏸）
 
 ## 交付物

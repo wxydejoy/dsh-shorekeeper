@@ -28,7 +28,7 @@
 ## C. dock 仓库两分支审核（岸亭侧）
 
 - [ ] `tts-openai-endpoint`：keeper-tts 加 OpenAI 兼容 `/v1/audio/speech`（8 测）；审后合入 dock main → 重启 keeper-tts 服务生效
-- [ ] `hub-slim`：retire 回滚开关（11 测，默认全关不动行为）+ 路由依赖矩阵盘点；审后合入 → 为 T7 分批退役备好闸门
+- [ ] `hub-slim`：retire 回滚开关（11 测）+ 路由依赖矩阵盘点 + **T2 三条增补路由网关实装**（caption/phone-layout/lock，10 测，37/39 对账一致）；审后合入 → k20 布局写入即刻全通，字幕/熄屏待安卓消费
 
 ## D. T3 观察（值班 agent(T1 会话) 负责，无需人工）
 

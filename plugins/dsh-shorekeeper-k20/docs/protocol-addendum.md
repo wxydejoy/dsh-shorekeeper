@@ -1,8 +1,8 @@
-# k20 屏网关协议增补提案（v1 扩展 · 未落地）
+# k20 屏网关协议增补提案（v1 扩展 · 网关已落地）
 
-> 状态：**提案**。按 `reference/lan-protocol.md` §13 的规矩，加接口先改文档再写代码——本文就是那份文档。
+> 状态：**网关已实装**（dock 仓库 `hub-slim` 8503d28：`dock_hub/screen_state.py` + 三路由 + `snapshot.caption/lock` + openapi/lan-protocol 同步，37/39 对账一致，1188 测全绿）。
 > 客户端实现：本插件 `src/gateway.ts`（含 mock：`test/mock-hub.ts`）。
-> 网关侧落地：T7 的瘦身 Hub（dock 仓库 `hub-slim` 分支）。真机验证：⏸。
+> 剩余：安卓侧消费（caption 渲染、lock 执行）与真机联调：⏸。`/v1/phone/layout` 零安卓改动，hub-slim 部署后即全通。
 
 ## 背景
 

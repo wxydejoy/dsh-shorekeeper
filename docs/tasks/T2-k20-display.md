@@ -23,11 +23,11 @@ k20 只当「显示屏 + 麦克风」外设，大脑在 dsh。协议见 `referen
 
 ### 阶段二：工具面（6–8h）
 - [x] `k20.snapshot`：布局 + 背景 + 在线态
-- [x] `k20.caption`：推/清字幕（守岸人说话同步的钩子留给 T4；走协议增补提案路由，真机 ⏸）
+- [x] `k20.caption`：推/清字幕（守岸人说话同步的钩子留给 T4；走协议增补提案路由——**网关侧已实装** hub-slim 8503d28，剩安卓渲染 + 真机 ⏸）
 - [x] `k20.wallpaper`：图/视频上传与切换（对照 dock/android `BackgroundServer.kt` 实测路由，全链路可用）
-- [x] `k20.layout`：模块显隐/样式/透明度（read 实路；apply 走提案路由 ⏸）
+- [x] `k20.layout`：模块显隐/样式/透明度（read 实路；apply 走提案路由——**网关已实装**，安卓按 rev 套用零改动，等 hub-slim 部署即全通）
 - [x] `k20.media`：媒体键（系统音量协议 v1 无路由 ⏸，Mini 音量走 keeper-tts `/v1/settings`）
-- [x] `k20.lock`：设备管理员熄屏（高危审批，默认关闭：`lockEnabled` 闸门兜底 + host 审批接线 ⏸ T1）
+- [x] `k20.lock`：设备管理员熄屏（高危审批，默认关闭：`lockEnabled` 闸门兜底 + host 审批接线 ⏸ T1；网关路由已实装，安卓执行面 ⏸）
 - [x] 权限分级落地：读 read-only，写/控全走 sandbox_permissions 审批（审批接线 ⏸ T1 真机校准）
 
 ### 阶段三：联调与打磨（4–6h）
