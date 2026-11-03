@@ -15,12 +15,12 @@ import { randomUUID } from 'node:crypto'
 import type { BackgroundIndex } from './types.ts'
 
 export class BackgroundRequestError extends Error {
-  constructor(
-    readonly status: number,
-    message: string,
-  ) {
+  readonly status: number
+
+  constructor(status: number, message: string) {
     super(`k20 background ${status}: ${message}`)
     this.name = 'BackgroundRequestError'
+    this.status = status
   }
 }
 

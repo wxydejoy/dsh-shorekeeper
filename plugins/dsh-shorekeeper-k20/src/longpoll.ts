@@ -26,13 +26,15 @@ const ACTIVE_POLL_MS = 3_000
 const IDLE_POLL_MS = 20_000
 
 export class SnapshotWatcher {
+  private readonly options: SnapshotWatcherOptions
   private readonly waitSec: number
   private readonly pollIntervalMs: number
   private since: number | undefined
   private backoffMs = ERROR_BACKOFF_START_MS
   private running = false
 
-  constructor(private readonly options: SnapshotWatcherOptions) {
+  constructor(options: SnapshotWatcherOptions) {
+    this.options = options
     this.waitSec = options.waitSec ?? 25
     this.pollIntervalMs = options.pollIntervalMs ?? IDLE_POLL_MS
     if (options.errorBackoffStartMs !== undefined) {

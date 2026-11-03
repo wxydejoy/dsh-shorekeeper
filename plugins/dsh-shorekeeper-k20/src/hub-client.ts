@@ -15,13 +15,14 @@ import type {
 } from './types.ts'
 
 export class HubRequestError extends Error {
-  constructor(
-    readonly status: number,
-    readonly code: string,
-    message: string,
-  ) {
+  readonly status: number
+  readonly code: string
+
+  constructor(status: number, code: string, message: string) {
     super(`k20 hub ${status} ${code}: ${message}`)
     this.name = 'HubRequestError'
+    this.status = status
+    this.code = code
   }
 }
 
