@@ -63,3 +63,11 @@ k20 只当「显示屏 + 麦克风」外设，大脑在 dsh。协议见 `referen
 - **验证**：`npx tsc --noEmit` 零错误；`npx vitest run` 24/24 通过（mock Hub 覆盖鉴权/长轮询唤醒/超时/错误归一化；mock BackgroundServer 覆盖登录/上传即生效/中文文件名 filename* 编码/select/clear/remove/会话过期重登/layout 503）。
 - ⏸ 待真机（T1 后）：真机 k20.lan 联调、设置卡片与 host 审批接线、提案三条路由的网关侧实现（T7）与安卓渲染（dock/android）。
 - 注：`k20.wallpaper` 的路由依据是 dock 仓库安卓源码，`reference/wallpaper.py` 实为「一句话壁纸」台词池（F39），与上传链路无关——原任务书表述有偏差，已在插件 README 修正。
+
+### 2026-11-03 · 值班 agent · 网关⇄客户端真 HTTP 集成（阶段三部分闭环）
+- **集成套件入库**：`test/gateway.live.test.ts` 8 条（默认 skip，`GW_URL`/`GW_TOKEN` 指向真网关即跑；CI 不受影响）。隔离网关实例（`--config` 临时 hub.yaml、:17899）下 **8/8 全过**：caption 推/清/校验、layout 两次写入 rev=2+槽位合并、lock 下发、401。
+- **集成暴露并修复了单测测不出的真 bug 两枚**（dock 仓库 hub-slim 分支）：
+  1. `screen_state.py` 的 `HubError` 误用三参形式——status 位装了中文消息串，`send_response(<消息串>)` 导致 400 响应崩坏（连接无响应关闭）。单测只断言 code 没查 status，mock 网关又实现正确，只有真 HTTP 才现形；
+  2. 新路由鉴权失败路径不消费请求体 → keep-alive 队列不同步（`Bad request syntax ('{"text":"x"}')`）。已改 body 先读后鉴权。
+- 环境备注：本机 shell 带 `http_proxy=127.0.0.1:7890`，curl 测本机服务必须 `--noproxy '*'`（502 全是代理给的假象）。
+- ⏸ 剩余：安卓侧消费（caption 渲染 / lock 执行）与真机联调；`/v1/phone/layout` 零安卓改动，hub-slim 合入部署后即全通。
