@@ -12,7 +12,8 @@
 | # | 待办 | 来源 | 验收线 | 依赖 |
 |---|---|---|---|---|
 | W1 | k20 测试 4 处类型错修红；`check-all.sh` 补进 desk-mi，全绿 | 夜计划 P0 | `bash scripts/check-all.sh` 输出全部绿色 | 无 |
-| W2 | 四个自写插件装进 :3081（k20 / keeper-voice / reading / ~~wechat~~）+ 重启冒烟 | 夜计划 P1；确认单 C3 | 三件冒烟各过：k20 工具面可见、reading 读真实书架、`/v1/audio/speech` 出音频；**自写 wechat 插件跳过**（与新路线重叠，微信入口已由 dsh-plugin-weixin 承担） | W1 |
+| W2 | **守岸人运行面迁移**：把 shorekeeper-lab 上在用的插件迁装进 **web profile（:3090）**——feiyu-memory、dsh-mijia-sidebar（desk-mi 工具）、自写 k20 / keeper-voice / reading（~~wechat~~ 跳过，入口已由 dsh-plugin-weixin 承担）、按需 calendar；迁移后 :3090 冒烟：k20 工具面可见、reading 能读书、`/v1/audio/speech` 出音频、米家只读正常 | 18:35 漂泊者：收敛到 web profile | 四件冒烟各过，web profile 的守岸人功能面 ≥ 迁移前 | W1 |
+| W2a | **删除 shorekeeper-lab profile**：删除前先归档——已装 bundle 清单、cordis.patch.yml、迁移用到的配置写进 docs/profile-shorekeeper-lab-archive.md；确认无独占数据（凭据在 ~/.dsh 全局、日记迁移已做、会话不保留）后删除 profile 并停掉 :3081 实例 | 18:35 漂泊者：删多余 profile | 归档文档落 docs、:3081 不再监听、web profile 不受影响 | W2（迁完才删） |
 | W3 | 任务书状态头对齐 + 清 `.worktrees` 误跟踪文件 + refactor-map 状态列 | 夜计划 P2 | 状态与 git log 一致，`git status` 干净 | 无 |
 | W4 | **T6 装前体检**：`dsh-wechat@0.15.0` 装进实验 profile，看 boot log 有无 disable/报错；不过则依次试 dsh-plugin-weixin@1.4.3 → dsh-wechat-plugin@0.47.0 | v2 路线 18:30 更新 | 体检报告落 docs：加载成功/失败 + 原因 | ✅ **已完成（漂泊者，18:3x）**：实装 **dsh-plugin-weixin@1.4.3** 进 **web profile**（:3090）并扫码打通——体检结论：iLink 个人微信路线可用，选型落地即此包 |
 | W4a | ~~装进 shorekeeper-lab~~（已取消）→ **人格绑定**：在 web profile 上把 T3 守岸人角色卡/预设绑到微信会话，让微信那头的会话以守岸人口吻说话 | 18:33 漂泊者拍板：不用独立 profile，就用 sessions 里的微信会话当守岸人对话 | 微信私聊回复是守岸人口吻（角色卡/世界书生效） | 无 |
@@ -33,16 +34,16 @@
 
 按「**仓库实例** vs **真机外部**」切，两人互不踩同一台机器上的同一层：
 
-### 甲 · 仓库与实例线（Mac 本机，dsh-shorekeeper 仓库 + :3081 + :3090）
+### 甲 · 仓库与实例线（Mac 本机，dsh-shorekeeper 仓库 + :3090）
 
-负责：**W1 → W2 → W3**，然后 **W4a → W5**（人格绑定与验收）、**W10、W11、W12**。
+负责：**W1 → W2 → W2a → W4a → W5**，以及 **W10、W11、W12**。
 
 - 特点：全在仓库和 profile 里打转，改代码、装插件、跑测试、写文档。
-- 关键产出：全绿的 check-all、自写插件进实例、微信会话人格绑定与验收、确认单 B5/W11 回填。
-- 交接物：W2 完成后冒烟记录（三件各一行证据），给乙的 W6 用。
+- 关键产出：全绿的 check-all、守岸人运行面收敛到 web profile、shorekeeper-lab 删除且归档在案、微信会话人格绑定与验收、确认单 B5/W11 回填。
+- 交接物：W2 完成后冒烟记录（四件各一行证据），给乙的 W6 用。
 
-> **shorekeeper-lab 定位（18:33 起）**：不再是守岸人主实例，微信/对话入口以 **web profile（:3090）** 为准。
-> 实例本身不拆，留作 headless 校准等实验用；其上的人格资产（角色卡/预设）随 W4a 迁绑到 web profile。
+> **profile 收敛（18:35 定案）**：**web profile（:3090）是守岸人唯一主实例**，微信（dsh-plugin-weixin）与桌面客户端都指它。
+> shorekeeper-lab（:3081）**迁完即删**（W2a），不再是实验实例；以后实验需求直接在 web profile 上用会话隔离，或另开一次性 profile，不再常驻。
 
 ### 乙 · 真机与外部线（k20 真机 + dock 仓库 + TTS）
 
@@ -80,3 +81,4 @@
 
 - W4 · 2026-11-03 18:32 · 漂泊者 · 部分完成但装错位置：dsh-plugin-weixin 装进了 web profile 并扫码打通（体检结论：iLink 路线可用）；**shorekeeper-lab 未装**，需 W4a 纠偏 + W5 重接，web profile 那份去留待定（默认保留，与守岸人线互不影响）
 - 定向 · 2026-11-03 18:33 · 漂泊者 · **不再用独立 profile**：就用 web profile 里 sessions 的微信会话作为守岸人对话；W4a 从「装进 shorekeeper-lab」改为「web profile 上做人格绑定」，W2 跳过自写 wechat 插件，shorekeeper-lab 降级为实验实例（不拆）
+- 修向 · 2026-11-03 18:35 · 漂泊者 · **删掉多余 profile**：shorekeeper-lab 不再保留，改为「迁移 → 冒烟 → 归档 → 删除」四步（W2 + W2a）；全部收敛到 web profile，:3081 实例退役
