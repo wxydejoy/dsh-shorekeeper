@@ -71,8 +71,9 @@
 
 1. **W5** 微信口吻真机验收（漂泊者手机私聊；守岸人模式已就位，如口吻偏差调 persona-modes.json）
 2. **W6/W7**（乙）k20 真机六工具 + 唤醒词路线甲（:3090 工具面已就绪，k20 插入项的 host/token 占位需真机校准）
-3. **W8/W9**（乙）dock 手动迁移 + keeper-tts 拉起音色对比；完成后回补 W2 冒烟③（`/v1/audio/speech`）
+3. ~~**W8/W9**~~ → **已落定（2026-11-04 01:00，甲代乙线完成）**：dock main 两笔迁移提交（0d422c1 三路由+retire、c01067f tts OpenAI 端点），hub 1188 测全绿 + tts 8/8 绿；keeper-tts 已带端点重启，`/v1/audio/speech` 实测 200/184KB WAV——**W2 冒烟③闭合，四件全过**。dock push 决策同样归漂泊者（dock main 领先 origin 2 提交）
 4. B 组余项：通知（B6）、tavern 全量校准（B4 解冻后）、语音真人实测（B3）
+5. **W6/W7 真机**：k20.lan 此刻不可达（health 超时），设备上线后乙线开跑；lock 熄屏项需漂泊者点头开闸
 
 ### push 前清单（绿了才推；push 决策归漂泊者）
 
