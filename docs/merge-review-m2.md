@@ -91,6 +91,10 @@
 **合并后必做**：在合并结果上重跑 `bash scripts/check-all.sh`（预期 12 项全绿）→ 绿了才推。
 **✅ 已执行（2026-11-04 01:1x，本地合并，未 push）**：main ← w1 → w2 → chore → docs 四路合并零冲突，main=37a3372，合并结果上 check-all **12 项全绿**、工作树干净——**技术侧全部就绪，push 只差漂泊者一句话**。dock main 同理（2 笔迁移提交，1188+8 测绿）。
 
+**push 增量实数（2026-11-04 01:3x 盘点）**：dsh-shorekeeper `main` 领先 `origin/main` **26 提交**；dock `main` 领先 **20 提交**（含 W8 的 2 笔 + 既有 18 笔）。合并后本地分支（fix/w1、fix/w2、chore/w3、docs/wechat-route-v2）内容已全部进 main，push 后可删。
+
+**附带产出**：feiyu 上游 issue 草稿落 `docs/feiyu-upstream-issue-draft.md`（W11 的 UNSUPPORTED_REASONING_EFFORT 静默吞错完整报告 + 修复建议），提交与否由漂泊者定。
+
 **测试证据**：上表首行；此外 W2/W10/W11 的功能冒烟均为真机实证（浏览器+真数据）。
 
 **风险与回滚**：profile 侧改动（~/.dsh）不在 git 内，回滚以 `~/.dsh/backups/shorekeeper-lab-profile-2026-11-04.tar.gz` 与文档为准；feiyu pnpm patch 在 web profile 的 `patches/` 有文件化留痕。
