@@ -77,7 +77,8 @@
 
 ### B5. feiyu 记忆写侧
 
-- [ ] 网页随便聊一轮 → 看 `~/.dsh/feiyu-diary/日记.md` 是否长出条目
+- [x] 网页随便聊一轮 → 看 `~/.dsh/feiyu-diary/日记.md` 是否长出条目
+  **已验（2026-11-03 23:45–00:12 · 甲 · W11）**：在 ：3090（web profile，按 18:35 收敛改在此测，原文写 ：3081）聊三轮，日记 5→7 条，含 d_20261104_01（青岛行程，salience 0.60）。**过程中定位并修复一个真 bug**：feiyu 固化默认 `reasoningEffort: "off"`，zhipu provider 的 GLM-4-Flash 不支持该档位，pi-ai 以 finish chunk（reason.kind=error）形态拒绝，而 feiyu 只检查 throw 与 `finish.kind` 字段（真错误在 `finish.reason.kind`）——「退回不指定重试」兜底永不触发，写侧整体静默失效（lab 走 openrouter 无此碰撞，故未暴露）。修复：web profile 对 feiyu-memory@4.0.2 打 pnpm patch（补 chunk 形态失败识别 + 触发既有重试逻辑），已验证两条日记落盘。**建议给 feiyu 上游提 issue**（含 mitm 抓包与 debug log 证据）。
 - [x] 你自己聊 自己对话
 
 ### B6. 通知
