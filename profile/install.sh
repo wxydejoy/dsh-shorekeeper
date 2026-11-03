@@ -47,15 +47,19 @@ if [ -f "$WS_FILE" ] && grep -q 'nodeLinker' "$WS_FILE"; then
 fi
 
 say "4/5 自写插件链接"
-# T9 踩坑（对全部自写 TS 插件生效）：file: 链接前必须在插件目录先 npm install——
+# T9 踩坑（对全部自写 TS 插件生效）：链接前必须在插件目录先 npm install——
 # isolated linker 从插件自身路径解析 @deepseek-ai/*，缺本地 node_modules 即
 # failed to import（boot 静默降级、工具不注册）；且运行时依赖须在 dependencies 段。
+# W2 踩坑（2026-11-03，Node 25 实证）：必须用 link: 不能用 file:——file: 会被 pnpm
+# 拷进 .pnpm store，源码落到 node_modules 下，Node 的 TS strip-only 模式直接拒载
+# （ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING），症状同样是 boot 静默降级。
+# 同理插件源码不得用 TS 参数属性（constructor(readonly x)），strip-only 不支持。
 for plugin in dsh-shorekeeper-desk-mi dsh-shorekeeper-k20 dsh-keeper-voice dsh-shorekeeper-reading dsh-shorekeeper-wechat; do
   if [ ! -d "${REPO_DIR}/plugins/${plugin}/node_modules" ]; then
     echo "  ↳ ${plugin} 缺 node_modules，先装本地依赖…"
     (cd "${REPO_DIR}/plugins/${plugin}" && npm install --silent)
   fi
-  dsh plugin --profile "${PROFILE_NAME}" add "file:${REPO_DIR}/plugins/${plugin}"
+  dsh plugin --profile "${PROFILE_NAME}" add "link:${REPO_DIR}/plugins/${plugin}"
 done
 
 say "5/5 cordis.patch.yml 默认值"
