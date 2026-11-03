@@ -16,7 +16,7 @@
 | `server.py` | 757 | HTTP 骨架退役；仅 k20 长轮询端点保留最小实现 | T2/T7 | ⚪ |
 | `companion_desk.py` | 731 | 桌面陪伴逻辑 → 守岸人角色卡内容 | T3 | ⚪ |
 | `persona.py` | 599 | 人格 → Tavern 角色卡 + 世界书 | T3 | ⚪ |
-| `mijia_bridge.py` + `mijia_catalog.py` | ~1000 | **整块退役**：面板=mijia-sidebar；「用嘴控灯/读数」= dsh-shorekeeper-desk-mi（T9，只读已验） | T9 | 🔵 |
+| `mijia_bridge.py` + `mijia_catalog.py` | ~1000 | **整块退役**：面板=mijia-sidebar；「用嘴控灯/读数」= dsh-shorekeeper-desk-mi（T9 done：B2 真控已验、check-all 全绿、已进 web profile） | T9 | 🟢 |
 | `setup_ui.py` | 970 | 配置向导退役 → dsh 设置卡片接管 | T7 | ⚪ |
 | `features.py` | 982 | 功能开关 → 各插件 Config namespace | T7 | ⚪ |
 | `reads.py` | 441 | 拆分：室外天气 → dsh-glass-weather + dsh-weather-panel（T1 实测✓）；室内温湿度 → dsh-shorekeeper-desk-mi `desk_mi_sensor`（T9 端到端已验） | T9 | 🟢 |

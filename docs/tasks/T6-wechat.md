@@ -1,7 +1,7 @@
 # T6 · dsh-shorekeeper-wechat —— 微信接入
 
 ```
-状态: doing · owner: 值班 agent · 开始于: 2026-11-03 · 预估: 12–16 agent 小时 · 前置: T1
+状态: review（桥本体交付已合 main；v2 路线定案后由 dsh-plugin-weixin 承担入口，自写桥不再迁移） · owner: 值班 agent · 开始于: 2026-11-03 · 预估: 12–16 agent 小时 · 前置: T1
 分支: T6-wechat
 ```
 
@@ -79,3 +79,4 @@
 - `bridge/wcferry_adapter.py`：真身骨架，集成面收窄到 online/account/digest_groups/recent_messages/send 四方法，全部真机 TODO 标注；wcferry 不可导入时明确报错不静默。
 - `bridge/tests/test_bridge.py` 12 条全绿（health/digest/401/409/钳位/白名单 403/节流时长/坏体校验）；部署 README（锁版本/NSSM/同源白名单）。
 - ⏸ 剩余：wcferry 四方法真机填实（Windows + 微信 3.9.11.25）、两路线 PoC、事件注入、渗透自测。
+- 2026-11-04（W3 对齐）：分支 T6-wechat 已合入 main（4dade16）；18:30/18:33 定案：微信入口改个人微信扫码（dsh-plugin-weixin@1.4.3 已装 web profile 并打通），自写桥归档不再装机；真机验收并入 W5。

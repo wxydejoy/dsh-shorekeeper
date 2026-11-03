@@ -1,7 +1,7 @@
 # T4 · dsh-keeper-voice —— 克隆音色桥
 
 ```
-状态: doing · owner: 值班 agent · 开始于: 2026-11-03 · 预估: 10–14 agent 小时 · 前置: T1（接入面确认）+ T3（人格就位后联调）
+状态: review（插件与客户端完工已合 main；语音链路联调=W9 待 keeper-tts 拉起） · owner: 值班 agent · 开始于: 2026-11-03 · 预估: 10–14 agent 小时 · 前置: T1（接入面确认）+ T3（人格就位后联调）
 分支: T4-keeper-voice    （内容可与 T2 并行，联调依赖 T3）
 ```
 
@@ -67,3 +67,4 @@ keeper-tts 是 Python 独立进程（`reference/tts/server.py` 快照），本�
 - **插件侧**（本仓库 `T4-keeper-voice` 分支 c3c3cdd）：接入面决策 = dsh-tts `custom` provider（配置接线，profile 片段见决策记录）；`keeper.status` / `keeper.voice_test` / `keeper.stop` 三工具 + mock keeper-tts 单测 11 条全绿；`tsc --noEmit` 零错误。
 - **SDK 实测新发现**：`@deepseek-ai/dsh-tools` 把 10 个兄弟包声明为 peer 且 npm legacy 模式不自动装——插件 devDeps 已显式钉全（reproducibility 顺带解决）；`dsh-voice-mode@0.7.34` 拖 0.2.0-rc.2 旧内部，与 0.2.1-rc.5 宿主同装会 ERESOLVE——**T1 兼容矩阵要专测 voice-mode 与 rc.5 的共装**。
 - ⏸ 待 T1/真机：barge-in 桥第二层（voice-mode 事件面）、字幕联动 hooks（T2 提案路由）、唤醒词决策（阶段四）、打断闭环真机验收。
+- 2026-11-04（W3 对齐）：分支 T4-keeper-voice 已合入 main（192b9a6）；人工项＝W9 音色对比；keeper-tts /health 已绿，OpenAI 兼容端点待 dock W8 合入后补测（W2 冒烟③挂起项）。

@@ -1,7 +1,7 @@
 # T2 · dsh-shorekeeper-k20 —— 安卓屏驱动
 
 ```
-状态: doing · owner: 值班 agent · 开始于: 2026-11-03 · 预估: 14–20 agent 小时 · 前置: T1
+状态: review（代码与 mock 侧完工已合 main；真机联调=W6 待乙线） · owner: 值班 agent · 开始于: 2026-11-03 · 预估: 14–20 agent 小时 · 前置: T1
 分支: T2-k20-display
 ```
 
@@ -71,3 +71,4 @@ k20 只当「显示屏 + 麦克风」外设，大脑在 dsh。协议见 `referen
   2. 新路由鉴权失败路径不消费请求体 → keep-alive 队列不同步（`Bad request syntax ('{"text":"x"}')`）。已改 body 先读后鉴权。
 - 环境备注：本机 shell 带 `http_proxy=127.0.0.1:7890`，curl 测本机服务必须 `--noproxy '*'`（502 全是代理给的假象）。
 - ⏸ 剩余：安卓侧消费（caption 渲染 / lock 执行）与真机联调；`/v1/phone/layout` 零安卓改动，hub-slim 合入部署后即全通。
+- 2026-11-04（W3 对齐）：分支 T2-k20-display 已合入 main（e88fefa 集成套件为其末提交）；人工项＝W6 k20 真机六工具联调，:3090 工具面已就绪（W2 冒烟 6/6 注册）。

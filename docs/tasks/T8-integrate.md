@@ -1,7 +1,7 @@
 # T8 · 集成、发布与端到端验收
 
 ```
-状态: doing · owner: 值班 agent · 预估: 10–12 agent 小时 · 前置: T2–T7 全部完成
+状态: review（install.sh 骨架与钉版清单已合 main；全新目录演练与十条场景待真机） · owner: 值班 agent · 预估: 10–12 agent 小时 · 前置: T2–T7 全部完成
 分支: T8-integrate
 ```
 
@@ -63,3 +63,4 @@
 - `docs/e2e-scenarios.md`：十条场景（与任务书 ①–⑩ 一一对应）× 期望链路 × 通过判据 + 三条兜底走查 + 走查记录区。
 - `docs/compat-matrix.md`：版本钉死表 + 兼容矩阵（✅ 已实测：defineTool DSL / tools.register / Schemastery；⚠️ voice-mode 共装；❌ 两个已知缺口：dispose 事件、installSection——均来自 T2/T4 的 SDK 实测）+ 四步升级流程。
 - ⏸ 全部真机项等待 T1《替代决策清单》落锤；本任务的真机走查零虚标。
+- 2026-11-04（W3 对齐）：分支 T8-integrate 已合入 main（73f2c88）；人工项＝全新目录演练 + 十条场景；W2 踩坑已回灌 install.sh（file:→link:、TS 参数属性禁令）。
