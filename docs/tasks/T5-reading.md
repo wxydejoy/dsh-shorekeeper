@@ -1,7 +1,7 @@
 # T5 · dsh-shorekeeper-reading —— 阅读
 
 ```
-状态: doing · owner: 值班 agent（T5）· 开始于: 2026-11-02 · 预估: 10–14 agent 小时 · 前置: T1 · 联调依赖 T4（听书）
+状态: review（插件与迁移器完工已合 main；听书链路待 T4/dsh-tts 接入） · owner: 值班 agent（T5）· 开始于: 2026-11-02 · 预估: 10–14 agent 小时 · 前置: T1 · 联调依赖 T4（听书）
 分支: T5-reading
 ```
 
@@ -67,3 +67,4 @@
 - 本机真书架（`~/.config/dock-hub/books`：1 本在读《我合成了全世界(王自律)》9.4MB + progress.json）完整走了一遍导出器：dry-run → 导出 → 幂等二跑（backup/ 时间戳目录生成 ✓）；迁移报告零未识别字段、零异常条目、fidelity=approx（系统 python 无 zh_chapter_splitter，符合预期并如实标注）。
 - **真数据暴露一个集成 bug 并已修复**（a1b9dbe）：导出器 render_shelf 的真实 schema 是 progress 嵌套书对象（percent/chapter_title/char_offset 在里面），插件数据层原按内部 _build_book 形状写（顶层 percent/chapters + 自造 progress.json 旁路）——自造夹具的单测测不出，真实数据一跑即现。已对齐真实契约、去旁路文件、夹具改为照抄真实导出记录；11 条单测 + ShelfStore 直指真实导出目录的端到端（查书/记进度页码保留迁移书签/摘抄/检索）全通。
 - 抽查结论（对应验收标准「抽查 10 本」）：当前书架仅 1 本，全字段核对无损（title/author 拆分、offset→percent 17.64%、章节 217 章、sha256/bytes）；书架扩充后按同流程再抽查。
+- 2026-11-04（W3 对齐）：分支 T5-reading 已合入 main（b1bb0db）；W10 实证书架/进度/摘抄/检索四工具全过（《世说新语》灌书）；人工项＝听书链路联调。

@@ -1,7 +1,7 @@
 # T3 · 守岸人人格工程 —— 角色卡 + 世界书 + skill
 
 ```
-状态: doing（阶段一/二完工+3条冒烟；27条全量跑批与web端调优待续）· owner: 值班 agent（ZCode，T1 会话）· 预估: 12–18 agent 小时 · 前置: T1（tavern 选型）
+状态: review（阶段一/二完工已合 main；27 条全量跑批与 web 端调优待续） · owner: 值班 agent（ZCode，T1 会话）· 预估: 12–18 agent 小时 · 前置: T1（tavern 选型）
 分支: T3-persona-card    （可与 T2 并行）
 ```
 
@@ -71,3 +71,4 @@ persona.py / companion_flow.py / intents.py / companion_desk.py 的灵魂全部�
 5. **宿主风险更新**——dsh-tavern 2.7.26 已由 T1 实测（D14），原「宿主是 T1 选定的 tavern 件」的悬置消除；新增 IAB 冻结 bug 风险行（T1 记录的两个 100% 冻结场景）。
 6. **T4 决策回填**——「tavern 件与 voice-mode 冲突」风险行更新为叠装分工事实 + 共装 ERESOLVE 信号（voice-mode@0.7.34 拖 0.2.0-rc.2 旧内部，装包实测）。
 7. 未动：目标、交付物、验收标准、预估（12–18h 对照 T2/T4/T5 实测吞吐合理）。
+- 2026-11-04（W3 对齐）：分支 T3-persona-card 已合入 main（967acb7）；人工项＝人格全量校准；微信侧人格已先以 weixin 自定义模式承载（W4a），tavern 全量卡待 B4 解冻。

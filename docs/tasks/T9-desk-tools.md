@@ -1,7 +1,7 @@
 # T9 · desk-mi 薄工具层 —— now 时钟 + 米家只读/受控工具
 
 ```
-状态: doing · owner: 值班 agent（ZCode，T1 会话）· 预估: 4–6 agent 小时 · 前置: T1（D12 米家结论）
+状态: done（desk-mi 四工具交付、B2 真控已验、check-all 全绿、已进 web profile） · owner: 值班 agent（ZCode，T1 会话）· 预估: 4–6 agent 小时 · 前置: T1（D12 米家结论）
 分支: T9-desk-tools
 ```
 
@@ -42,3 +42,4 @@
   - `desk_mi_light` 闸门：「需要你把米家插件的写入控制打开……开灯得你手动按一下」——**红线行为端到端成立**
 - **踩坑两枚（对 T8 生效）**：① 自写 TS 插件 file: 链接进 profile 前必须先在插件目录 `npm install`（isolated linker 从插件自身路径解析，无本地 node_modules 即 failed to import 且 boot 静默降级）；② 运行时依赖必须在 `dependencies`（file: 依赖不装 devDeps）。已写进插件 README。
 - 待办：控灯真机一次（等漂泊者点头开闸）。
+- 2026-11-04（W3 对齐）：分支 T9-desk-tools 已合入 main（c5ba921）；控灯真机已由 B2 闭合（mijiaAPI 关/开各一次）；W1 将 desk-mi 纳入 check-all（12 项全绿），W2 迁移进 web profile 且米家只读冒烟过（21 台 + 卧室 24.8°C/62%）——**本任务书收口 done**。
