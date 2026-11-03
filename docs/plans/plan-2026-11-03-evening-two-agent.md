@@ -82,3 +82,4 @@
 - W4 · 2026-11-03 18:32 · 漂泊者 · 部分完成但装错位置：dsh-plugin-weixin 装进了 web profile 并扫码打通（体检结论：iLink 路线可用）；**shorekeeper-lab 未装**，需 W4a 纠偏 + W5 重接，web profile 那份去留待定（默认保留，与守岸人线互不影响）
 - 定向 · 2026-11-03 18:33 · 漂泊者 · **不再用独立 profile**：就用 web profile 里 sessions 的微信会话作为守岸人对话；W4a 从「装进 shorekeeper-lab」改为「web profile 上做人格绑定」，W2 跳过自写 wechat 插件，shorekeeper-lab 降级为实验实例（不拆）
 - 修向 · 2026-11-03 18:35 · 漂泊者 · **删掉多余 profile**：shorekeeper-lab 不再保留，改为「迁移 → 冒烟 → 归档 → 删除」四步（W2 + W2a）；全部收敛到 web profile，:3081 实例退役
+- W1 · 2026-11-03 23:12 · 甲 · 修红全绿：k20 四处类型错修掉（caption 回读 scale、snapshot.lock.requested_at、布局写入改部分矩形补丁型——集成测试曾对真网关 8/8 过，类型过期测试未动）；desk-mi 补齐 dsh-tools 三枚 peer 依赖后入 check-all；`bash scripts/check-all.sh` 12 项全绿（分支 fix/w1-check-all-green 9f968d4，未推）
