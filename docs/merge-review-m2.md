@@ -93,7 +93,7 @@
 
 **push 增量实数（2026-11-04 01:3x 盘点）**：dsh-shorekeeper `main` 领先 `origin/main` **26 提交**；dock `main` 领先 **20 提交**（含 W8 的 2 笔 + 既有 18 笔）。合并后本地分支（fix/w1、fix/w2、chore/w3、docs/wechat-route-v2）内容已全部进 main，push 后可删。
 
-**附带产出**：feiyu 上游 issue 草稿落 `docs/feiyu-upstream-issue-draft.md`（W11 的 UNSUPPORTED_REASONING_EFFORT 静默吞错完整报告 + 修复建议），提交与否由漂泊者定。
+**附带产出**：feiyu 上游 issue 草稿曾落 `docs/feiyu-upstream-issue-draft.md`（W11 的 UNSUPPORTED_REASONING_EFFORT 静默吞错完整报告 + 修复建议）。**2026-11-04 撤项**：漂泊者指示「别提了 删掉」，草稿已删（docs/feiyu-drop 986a7d6），上游 issue 不再提交；W11 的修复（pnpm patch）仍留在本机 profile，不受影响。
 
 **测试证据**：上表首行；此外 W2/W10/W11 的功能冒烟均为真机实证（浏览器+真数据）。
 
