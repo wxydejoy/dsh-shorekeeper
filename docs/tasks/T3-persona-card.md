@@ -55,7 +55,7 @@ persona.py / companion_flow.py / intents.py / companion_desk.py 的灵魂全部�
 | 人格漂移（卡写得美但演不像） | 剧本回归 + 出处标注 + 只改卡不改剧本 |
 | 世界书膨胀吃上下文 | 关键词触发为主，常驻条目限 10 条内 |
 | tavern 件与 voice-mode 冲突 | 职责已叠装分工（T4 决策：voice-mode 管全双工链路，TTS 面归 dsh-tts custom→keeper-tts）；共装有 ERESOLVE 信号（voice-mode 拖旧内部），T1 兼容矩阵专测 |
-| dsh-tavern IAB 冻结 bug（T1 D14 记录） | 两个冻结场景待漂泊者 Chrome 复测定责；开工前先复测，冻结面避开相关操作 |
+| dsh-tavern IAB 冻结 bug（T1 D14 记录） | 冻结场景依赖的 lab 预设声明已随 lab 删除（2026-11-05 复核：:3090 选择器无酒馆默认，场景无从触发）；定责随 B4 重声明一并做 |
 
 ## 验收记录
 （执行时追加）
