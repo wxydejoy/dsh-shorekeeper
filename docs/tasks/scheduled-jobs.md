@@ -12,5 +12,5 @@
 | J3 | 每周 | **retire 观察期巡查**（Z10 翻 `retire.monitoring` 后生效）：岸亭 hub 闸门状态、k20 app 掉线横幅抽查（adb 长轮询 ESTABLISHED） | ⏸ 未建 | 每周（届时定） | 等 Z10 完工后建 |
 | J4 | 每日 | **glm 配额巡查**：quota-watch 插件已在实例内做 idle/重置（legacy 开关已强制关），此项只登记去重，勿重复造轮子 | ❌ 不建 | — | 插件承担 |
 | J5 | 每日 | **微信会话延迟抽样**：最近 wx turn 的 journal 时间差 + 会话流水 request/header 拆模型步耗时，对比 2026-11-04 基线 43s（思考保留定调），追加 `~/.dsh/logs/latency-baseline.md` | ✅ `f37afd44` | 每日 23:00 | ACTIVE |
-| J6 | 机器重启后 | **launchd 常驻重试**：机器级 bootstrap 修复（error 5）前不重试；修复后验证 `cn.weiekko.dsh-web` 常驻 | ⏸ 未建 | 开机（届时定） | 修复前禁跑 |
+| J6 | 机器重启后 | **launchd 常驻重试**：~~机器级 bootstrap 修复前不重试~~ ✅ **2026-11-04 22:40 已修复并常驻**（`cn.weiekko.dsh-web` RunAtLoad+KeepAlive，kill -9 自愈实证；bootstrap 须走 `ssh localhost` 会话，见夜班计划 Z1）。launchd 自己管重启，此项**降级为 J1 的探活对象之一，无需独立任务** | ✅ 已修复 | launchd | 无需建卡 |
 | J7 | 每周 | **书库/日记备份核验**：`~/.dsh/data/reading` 与 feiyu 日记目录存在且可读（只读核验，报文件数/最新日期） | ✅ `91f417d1` | 每周日 21:00 | ACTIVE |
