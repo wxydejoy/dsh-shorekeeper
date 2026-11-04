@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { ShelfStore } from '../src/shelf.ts'
 import { createReadingTools } from '../src/tools.ts'
+import type { ListenEngine } from '../src/listen.ts'
 
 let dir: string
 
@@ -67,7 +68,15 @@ function store() {
 }
 
 function tools() {
-  return createReadingTools({ store: store() })
+  // 听书引擎不在本文件测（listen.test.ts），给个空壳满足依赖面
+  const stub = {
+    get status() { return null },
+    get playing() { return false },
+    start: () => false,
+    stop: async () => null,
+    resumeCandidate: () => null,
+  } as unknown as ListenEngine
+  return createReadingTools({ store: store(), listen: stub })
 }
 
 function byName(name: string) {

@@ -145,6 +145,27 @@ export class ShelfStore {
     return entry
   }
 
+  /** 书全文文件定位：dataDir 根或 books-txt/ 子目录（迁移实际落点），按 migrated.source_file 找。 */
+  bookTextPath(book: Book): string | null {
+    const source = book.migrated?.source_file
+    if (!source) return null
+    for (const candidate of [join(this.dir, source), join(this.dir, 'books-txt', source)]) {
+      if (existsSync(candidate)) return candidate
+    }
+    return null
+  }
+
+  /** 读书全文（听书切块用）。文件缺失/未迁移返回 null，由调用方走降级文案。 */
+  readBookText(book: Book): string | null {
+    const path = this.bookTextPath(book)
+    if (!path) return null
+    try {
+      return readFileSync(path, 'utf-8')
+    } catch {
+      return null
+    }
+  }
+
   /** reading.ask 的本地检索：摘抄/随想 + 书名/进度信息。记忆插件检索 ⏸ T3 选型后挂接（T1 已选 feiyu-memory）。 */
   ask(question: string): { notes: BookNote[]; books: Book[] } {
     const keywords = question

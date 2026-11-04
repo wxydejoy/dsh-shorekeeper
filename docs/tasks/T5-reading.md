@@ -1,7 +1,7 @@
 # T5 · dsh-shorekeeper-reading —— 阅读
 
 ```
-状态: review（插件与迁移器完工已合 main；听书链路待 T4/dsh-tts 接入） · owner: 值班 agent（T5）· 开始于: 2026-11-02 · 预估: 10–14 agent 小时 · 前置: T1 · 联调依赖 T4（听书）
+状态: review（插件与迁移器完工已合 main；听书三件 agent 侧落地（Z8：切句/断点/停等单测 27 绿），真机听感留人工；k20 字幕联动 ⏸） · owner: 值班 agent（T5）· 开始于: 2026-11-02 · 预估: 10–14 agent 小时 · 前置: T1 · 联调依赖 T4（听书）
 分支: T5-reading
 ```
 
@@ -28,7 +28,7 @@
 - [x] 权限：全 read-only（数据修改经守岸人对话完成，仍走本插件写入口）
 
 ### 阶段三：听书与联动（4–5h）
-- [ ] 听书模式：分段流式调 keeper-voice 朗读，可打断（⏸ 联调依赖 T4/T1；切句规则已在 books-format.md §4 备好——36 字打包/预取下一句/断点续读）
+- [x] 听书模式：reading.listen/stop/resume 三工具（Z8 2026-11-05）：直连 keeper-tts /v1/audio/speech（play:true 服务端喇叭出声）、切句打包照 books-format §4（36/52/120）、每段落盘 offset 断点续读、listen-state.json 沿迁移 schema、打断=再来一条指令即停（barge-in 桥 ⏸ T4）
 - [ ] 睡前听书联动 k20 字幕（⏸ 依赖 T2 提案路由落地）
 - [ ] 记忆插件联动：读完一章自动沉淀摘要事实（⏸ T3 选型）
 - [x] 单测 + 真实数据回归 + 验收记录（单测 27+10 全绿；真实数据回归 ⏸）
@@ -40,7 +40,7 @@
 ## 验收标准
 - [ ] 历史书架数据完整迁入（抽查 10 本，字段无损）
 - [ ] 「我看到 217 页了，记一下」生效且进度可查
-- [ ] 听书能读能停，断点续读
+- [x] 听书能读能停，断点续读（单测 mock TTS 27 条全绿：切句边界/断点恢复/stop 立即返/失联与 404 优雅落 error；真机听感验收留人工）
 - [ ] 守岸人对「上次读哪了」答得上来
 
 ## 拓展方向 / 未来方向
@@ -68,3 +68,9 @@
 - **真数据暴露一个集成 bug 并已修复**（a1b9dbe）：导出器 render_shelf 的真实 schema 是 progress 嵌套书对象（percent/chapter_title/char_offset 在里面），插件数据层原按内部 _build_book 形状写（顶层 percent/chapters + 自造 progress.json 旁路）——自造夹具的单测测不出，真实数据一跑即现。已对齐真实契约、去旁路文件、夹具改为照抄真实导出记录；11 条单测 + ShelfStore 直指真实导出目录的端到端（查书/记进度页码保留迁移书签/摘抄/检索）全通。
 - 抽查结论（对应验收标准「抽查 10 本」）：当前书架仅 1 本，全字段核对无损（title/author 拆分、offset→percent 17.64%、章节 217 章、sha256/bytes）；书架扩充后按同流程再抽查。
 - 2026-11-04（W3 对齐）：分支 T5-reading 已合入 main（b1bb0db）；W10 实证书架/进度/摘抄/检索四工具全过（《世说新语》灌书）；人工项＝听书链路联调。
+
+### 2026-11-05 · zcode · 听书三件落地（Z8，分支 fix/z8-reading-listen）
+- **实现**：`src/speech.ts`（cutSentences/chunkReadText(120)/packReadChunks(36/52)/estimateReadSeconds，books-format §4 忠实移植+单测钉边界）、`src/tts-client.ts`（keeper-tts 直连：speech 带 play:true 服务端喇叭出声、stop 清队幂等；错误三分支 network/HTTP/超时都翻译成人话）、`src/listen.ts`（ListenState 沿迁移 listen-state.json schema——current_id/timer_min/books[offset]，迁移书签无缝续读；ListenEngine 逐段朗读+每段落盘 offset+deadline 定时+abort 打断）、`src/tools.ts` 增 reading.listen/stop/resume（未知书/无书文件/已在播三分支降级文案）、config 增 ttsBaseUrl/ttsSpeed（0.5–2.0 钳位）。
+- **播放链定性**：keeper-tts 以 `--play` 起在 Mac Mini（server.py speak() 的 allow_play 语义实证），listening 直驱其服务端喇叭——与 T4 的 dsh-tts provider 桥分工：那是「她开口说话」，这是「读书」，不复用以免跨插件依赖。
+- **验证**：typecheck 零错；vitest 27/27（含 abort 语义对齐真 fetch、deadline 绝对到期钩子、迁移 schema 往返）；全仓 check-all 全绿。
+- ⏸ 留人工：真机听感（指定《世说新语》某章连读 ≥3 段、打断立即停的耳朵验收）；k20 字幕联动 ⏸（T2 提案路由）；读完沉淀记忆 ⏸（T3 选型后）。
