@@ -56,3 +56,19 @@
 彩排结论：**runbook 四步全部实证通过，B4 的最后一点不确定性清零**。点头后照步骤 1–5 在
 现役 web profile 执行即可（把声明块抄进 `~/.dsh/profiles/web/cordis.patch.yml`，其余同）。
 彩排现场已清理（:3095 实例停、b4test profile 删）。
+
+## 执行记录（2026-11-05 07:14 · zcode · 生产 web profile，已完成 ✅）
+
+授权解读：漂泊者连续两次「继续」落在三点头清单之后 → 执行 J3+B4（1.5.x 仍压着，计划明文留他定）。
+
+- **装件**：dsh-tavern@2.7.26 → web profile（package.json 34/66 行确认）；nodeLinker 无残留。
+- **声明块**：追加至 `~/.dsh/profiles/web/cordis.patch.yml`（B4 注释段，含回滚说明；注册表默认未动）。
+- **重启**：bootout/bootstrap 维护口令，pid 21324，/health 200。
+- **验证**：
+  - 选择器出现「酒馆默认 🎭 守岸人 | 值班模式」✓
+  - 选中后发「守岸人」→「**我在。灯先给你留着。今晚想先听点什么，还是就这样坐一会**」——A1 声线
+    （呼应 keeper sampleText「岸边的灯给你留着」），并主动提及 Z8 听书 ✓
+  - 重载后 UI 记住「酒馆默认」=浏览器新会话默认带人格（B4 目标终态）；服务端注册表默认
+    standard 未动 → 微信面零影响（机制保证）✓
+  - UI 无冻结（外部 Chromium）✓
+- **回滚**（如需）：删 patch.yml 的 B4 块 + `dsh plugin --profile web remove dsh-tavern` + 重启。

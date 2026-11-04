@@ -32,3 +32,4 @@
 - **岸亭 push 授权仍只限 dsh-shorekeeper 仓库**；dsh-plugin-weixin 上游今天发了 1.5.x（1.4.3 不含消毒逻辑）——升级与否等漂泊者点头，升级则两个 patch 都要重做。
 - **驱动生产实例会话的口子 = console API**：POST `:3090/api/dsh-console/cmd`（Bearer 用 ~/.dsh/dsh-console-token.json 的 token；body `{op, payload:{...}}`）。op：create（cwd）/send（sessionId+text，走 ctl.prompt 真会话轮）/detail（sessionId，返回 turns 含逐 turn tools 调用记录）/sessions/cancel 等。不用等微信消息就能在生产实例上验证 agent 级行为（Z4 实证）。
 - **:3090 web profile 没有 dsh-tavern**——浏览器/TUI 会话是默认 assistant 前缀+全量工具（无人格）；现役人格只在微信侧（weixin 自定义模式）。B4（tavern 上 web profile）阻碍已清（IAB 冻结场景随 lab 删除不复存在+外部 Chromium 渲染正常），装件+声明预设即可做，会改全部浏览器会话行为，等漂泊者点头。web 会话驱动同 console API（op:create/send/detail，send 支持 busyMode:'steer' 注入运行中的 turn=打断模拟）。
+- **B4 已执行（2026-11-05 晨）**：web profile 装了 dsh-tavern@2.7.26+声明「酒馆默认」预设（cordis.patch.yml B4 块）；浏览器新会话默认酒馆默认=带守岸人人格，**注册表默认仍是 standard（微信桥 mount 它，改了会双注入——这条别动）**；微信会话人格仍是 weixin 自定义模式。回滚=删 B4 块+remove tavern+重启。
