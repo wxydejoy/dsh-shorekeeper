@@ -101,6 +101,44 @@ def cmd_set(api, did, prop, value):
     json.dump({"did": did, "prop": target, "value": value, "ok": True}, sys.stdout, ensure_ascii=False)
 
 
+def pick_writable_prop(props, *keys):
+    """TS pickKey 的 python 镜像：键名归一化后 includes 匹配，只挑可写属性。"""
+    for key in keys:
+        for prop_name, definition in props.items():
+            norm = prop_name.lower().replace("-", "_")
+            if key.lower() in norm and "w" in getattr(definition, "rw", ""):
+                return prop_name
+    return None
+
+
+def cmd_light_set(api, args):
+    """单进程控灯：设备解析 + 属性挑选 + 写入一次完成（提速②：省 2 次云设备列表 + 1 次云读 + 2 次解释器启动）。"""
+    name = args.name
+    devices = api.get_devices_list()
+    matches = [d for d in devices if str(d.get("name")) == name]
+    if not matches:
+        fail("error", "米家里没有叫「%s」的设备" % name)
+    entry = matches[0]
+    if entry.get("isOnline") is not True:
+        fail("error", "%s 离线，动不了。" % name)
+    device = mijiaDevice(api, did=str(entry["did"]))
+    props = canonical_props(device)
+    if args.action == "brightness":
+        target = pick_writable_prop(props, "brightness", "亮度")
+        if target is None:
+            fail("error", "%s 不支持调亮度" % name)
+        if args.brightness is None or args.brightness < 1 or args.brightness > 100:
+            fail("error", "brightness 需要 1-100")
+        value = int(round(args.brightness))
+    else:
+        target = pick_writable_prop(props, "switch", "on", "开关")
+        if target is None:
+            fail("error", "%s 上没找到开关属性" % name)
+        value = args.action == "on"
+    device.set(target, value)
+    json.dump({"did": str(entry["did"]), "name": name, "prop": target, "value": value, "ok": True}, sys.stdout, ensure_ascii=False)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--auth_path", default=str(default_auth_path()))
@@ -112,6 +150,10 @@ def main():
     p_set.add_argument("--did", required=True)
     p_set.add_argument("--prop", required=True)
     p_set.add_argument("--value", required=True)
+    p_light = sub.add_parser("light_set", help="单进程控灯：解析设备+挑属性+写入")
+    p_light.add_argument("--name", required=True)
+    p_light.add_argument("--action", required=True, choices=["on", "off", "brightness"])
+    p_light.add_argument("--brightness", type=float, default=None)
     args = parser.parse_args()
 
     check_auth(args.auth_path)
@@ -121,6 +163,8 @@ def main():
             cmd_list(api)
         elif args.cmd == "state":
             cmd_state(api, args.did)
+        elif args.cmd == "light_set":
+            cmd_light_set(api, args)
         else:
             try:
                 value = json.loads(args.value)

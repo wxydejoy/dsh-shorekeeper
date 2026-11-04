@@ -34,5 +34,9 @@ cd "$ROOT/plugins/dsh-shorekeeper-wechat/bridge/tests"
 O=$(python3 -m unittest test_bridge 2>&1 | grep -E '^(OK|FAILED)' | head -1)
 if echo "$O" | grep -q '^OK'; then say "✅ bridge $O"; else say "❌ bridge ${O:-无输出}"; FAIL=1; fi
 
+cd "$ROOT/plugins/dsh-shorekeeper-desk-mi/py"
+O=$(python3 -m unittest test_mi_bridge 2>&1 | grep -E '^(OK|FAILED)' | head -1)
+if echo "$O" | grep -q '^OK'; then say "✅ desk-mi py $O"; else say "❌ desk-mi py ${O:-无输出}"; FAIL=1; fi
+
 if [ "$FAIL" -eq 0 ]; then say "════ 全部绿色"; else say "════ 有失败项"; fi
 exit $FAIL

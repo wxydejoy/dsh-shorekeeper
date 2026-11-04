@@ -146,50 +146,17 @@ export function createDeskMiTools(deps: DeskMiToolDeps): ToolDefinition[] {
       if (!name || !['on', 'off', 'brightness'].includes(action)) {
         return { ok: false, degraded: 'name 与 action（on/off/brightness）必填', summary: '参数不对' } satisfies Json
       }
-      const list = await bridge.list()
-      if (!list.ok) return { ok: false, degraded: list.message, summary: list.message } satisfies Json
-      const devices = (list.data.devices as Array<Record<string, unknown>>) ?? []
-      const device = devices.find((d) => String(d.name ?? '') === name)
-      if (!device) {
-        const message = `米家里没有叫「${name}」的设备`
-        return { ok: false, degraded: message, summary: message } satisfies Json
+      if (action === 'brightness' && (typeof args.brightness !== 'number' || args.brightness < 1 || args.brightness > 100)) {
+        return { ok: false, degraded: 'brightness 需要 1-100', summary: '亮度要 1 到 100' } satisfies Json
       }
-      if (device.online !== true) {
-        const message = `${name} 离线`
-        return { ok: false, degraded: message, summary: `${name} 离线，动不了。` } satisfies Json
-      }
-      const did = String(device.did)
-      const state = await bridge.state(did)
-      if (!state.ok) return { ok: false, degraded: state.message, summary: state.message } satisfies Json
-      const states = (state.data.states as Record<string, unknown>) ?? {}
-      const switchProp = pickKey(states, ['switch', 'on', '开关'])
-      if (!switchProp) {
-        const message = `${name} 上没找到开关属性`
-        return { ok: false, degraded: message, summary: message } satisfies Json
-      }
-      let write: { prop: string; value: unknown } | null = null
-      if (action === 'on') write = { prop: switchProp, value: true }
-      if (action === 'off') write = { prop: switchProp, value: false }
-      if (action === 'brightness') {
-        const bri = args.brightness
-        if (typeof bri !== 'number' || bri < 1 || bri > 100) {
-          return { ok: false, degraded: 'brightness 需要 1-100', summary: '亮度要 1 到 100' } satisfies Json
-        }
-        const briProp = pickKey(states, ['brightness', '亮度'])
-        if (!briProp) {
-          const message = `${name} 不支持调亮度`
-          return { ok: false, degraded: message, summary: message } satisfies Json
-        }
-        write = { prop: briProp, value: Math.round(bri) }
-      }
-      if (!write) return { ok: false, degraded: '未知动作', summary: '未知动作' } satisfies Json
-      const result = await bridge.set(did, write.prop, write.value)
+      // 提速②：单进程 light_set（设备解析+在线检查+属性挑选+写入一次完成），省 2 次云设备列表往返
+      const result = await bridge.lightSet(name, action as 'on' | 'off' | 'brightness', typeof args.brightness === 'number' ? args.brightness : undefined)
       if (!result.ok) return { ok: false, degraded: result.message, summary: result.message } satisfies Json
       return {
         ok: true,
-        did,
-        prop: write.prop,
-        value: JSON.parse(JSON.stringify(write.value ?? null)) as Json,
+        did: String(result.data.did ?? ''),
+        prop: String(result.data.prop ?? ''),
+        value: JSON.parse(JSON.stringify(result.data.value ?? null)) as Json,
         summary:
           action === 'brightness'
             ? `${name} 亮度调到 ${Math.round(args.brightness as number)}`

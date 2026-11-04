@@ -29,6 +29,10 @@ function fakeBridge(overrides: Partial<Record<keyof MiBridge, unknown>> = {}): M
       data: { did: 'd1', states: { 'Switch Status': true, Brightness: 50, Temperature: 25.4 } },
     })),
     set: vi.fn(async () => ({ ok: true as const, data: { did: 'd1' } })),
+    lightSet: vi.fn(async (_name: string, action: 'on' | 'off' | 'brightness') => ({
+      ok: true as const,
+      data: { did: 'd1', name: _name, prop: action === 'brightness' ? 'brightness' : 'Switch Status', value: action === 'on' ? true : action === 'off' ? false : 50 },
+    })),
   }
   return { ...base, ...overrides } as unknown as MiBridge
 }
@@ -95,21 +99,22 @@ describe('desk_mi_light 闸门（红线）', () => {
     expect(bridge.list).not.toHaveBeenCalled()
   })
 
-  it('controlEnabled=true：开灯走 set', async () => {
-    const bridge = fakeBridge({
-      state: vi.fn(async () => ({
-        ok: true as const,
-        data: { did: 'd1', states: { 'Switch Status': false, Brightness: 30 } },
-      })),
-    })
+  it('controlEnabled=true：开灯走 lightSet（单进程）', async () => {
+    const bridge = fakeBridge()
     const value = (await must(getTools(bridge, { ...config, controlEnabled: true }), 'desk_mi_light').execute({ name: '台灯', action: 'on' }, exec)) as Record<string, unknown>
     expect(value.ok).toBe(true)
     expect(value.prop).toBe('Switch Status')
     expect(value.value).toBe(true)
+    expect((bridge.lightSet as ReturnType<typeof vi.fn>).mock.calls[0]).toEqual(['台灯', 'on', undefined])
+    expect(bridge.state).not.toHaveBeenCalled() // 提速②：不再先读一遍状态
   })
 
-  it('离线设备拒绝写入', async () => {
-    const value = (await must(getTools(fakeBridge(), { ...config, controlEnabled: true }), 'desk_mi_light').execute({ name: '挂灯', action: 'on' }, exec)) as Record<string, unknown>
+  it('离线设备拒绝写入（python 侧判定，TS 透传降级）', async () => {
+    // 提速②后在线检查在 python light_set 内做：桥报错 → TS 原样透传
+    const bridge = fakeBridge({
+      lightSet: vi.fn(async () => ({ ok: false as const, code: 'error', message: '挂灯 离线，动不了。' })),
+    })
+    const value = (await must(getTools(bridge, { ...config, controlEnabled: true }), 'desk_mi_light').execute({ name: '挂灯', action: 'on' }, exec)) as Record<string, unknown>
     expect(value.ok).toBe(false)
     expect(String(value.degraded)).toContain('离线')
   })

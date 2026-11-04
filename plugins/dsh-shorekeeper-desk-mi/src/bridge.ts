@@ -86,6 +86,14 @@ export function createBridge(options: BridgeOptions) {
     state: (did: string) => run(['state', '--did', did]),
     set: (did: string, prop: string, value: unknown) =>
       run(['set', '--did', did, '--prop', prop, '--value', JSON.stringify(value)]),
+    /** 单进程控灯（提速②）：设备解析+属性挑选+写入一次完成 */
+    lightSet: (name: string, action: 'on' | 'off' | 'brightness', brightness?: number) =>
+      run([
+        'light_set',
+        '--name', name,
+        '--action', action,
+        ...(brightness !== undefined ? ['--brightness', String(brightness)] : []),
+      ]),
   }
 }
 
