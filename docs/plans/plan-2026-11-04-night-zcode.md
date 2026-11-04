@@ -49,3 +49,4 @@
 ## 五、进度（逐项追加，格式：`Z# · 时间 · 谁 · 一行结论`）
 
 - 计划落档 · 2026-11-04 16:45 · 守岸人（Claw）· 六项排好（Z1 实例常驻 → Z2 路由实证 → Z3 工具面根因 → Z4 k20 六工具 → Z5 听书 → Z6 文档），红线与坑录入；开工前状态：:3090 停机等 Z1，其余各面健康
+- Z4部分 · 2026-11-04 17:45 · 守岸人（WorkBuddy）· **客户端层五工具真机实证（k20.lan 在线）**：新增 plugins/dsh-shorekeeper-k20/test/real-device.live.test.ts（REAL_K20=1 门控，仿 gateway.live 风格，CI 不受影响）——snapshot/caption（真推真清）/wallpaper（上传探针图→还原→删）/layout（读现状→原样回写→rev 递增）/media（toggle 两次回原态）5/5 过，typecheck 零错、插件全量单测 28 绿；三条校准发现：①背景实名不能含数字（安卓端校验）②/api/layout 的 modules 里嵌标量 version、真模块表在 modules.modules（网关回写只收后者）③media 返回的是按键后的 playing。剩：:3090 会话里 agent 级把 k20_* 各调一遍（Z4 本体，客户端层已全绿）；k20_lock 仍只验注册与路由，熄屏红线不动
