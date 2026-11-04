@@ -23,6 +23,8 @@ export interface KeeperClientOptions {
   /** 服务端设了 --token 时必填；本机回环默认免口令 */
   token?: string
   fetchImpl?: typeof fetch
+  /** 超时可注入（单测用短超时打超时分支；线上默认 5s/120s/2s） */
+  timeouts?: Partial<{ health: number; speech: number; stop: number }>
 }
 
 export interface KeeperHealth {
@@ -59,15 +61,17 @@ export class KeeperClient {
   private readonly baseUrl: string
   private readonly token: string | undefined
   private readonly fetchImpl: typeof fetch
+  private readonly timeouts: { health: number; speech: number; stop: number }
 
   constructor(options: KeeperClientOptions) {
     this.baseUrl = options.baseUrl.replace(/\/+$/, '')
     this.token = options.token || undefined
     this.fetchImpl = options.fetchImpl ?? fetch
+    this.timeouts = { ...TIMEOUT_MS, ...options.timeouts }
   }
 
   async health(): Promise<KeeperHealth> {
-    return this.request('GET', '/health', { timeoutMs: TIMEOUT_MS.health, auth: false })
+    return this.request('GET', '/health', { timeoutMs: this.timeouts.health, auth: false })
   }
 
   /** OpenAI 兼容合成。慢请求：整段合成按文本长度可能数十秒 */
@@ -76,7 +80,7 @@ export class KeeperClient {
     if (request.format !== undefined) body.response_format = request.format
     if (request.speed !== undefined) body.speed = request.speed
     if (request.voice !== undefined) body.voice = request.voice
-    const response = await this.raw('POST', '/v1/audio/speech', { body, timeoutMs: TIMEOUT_MS.speech })
+    const response = await this.raw('POST', '/v1/audio/speech', { body, timeoutMs: this.timeouts.speech })
     if (!response.ok) throw await this.toError(response)
     const audio = new Uint8Array(await response.arrayBuffer())
     return {
@@ -88,7 +92,7 @@ export class KeeperClient {
 
   /** 打断：清 keeper 本地喇叭播放队列 + 作废在途合成（幂等，服务端永远 200） */
   async stop(): Promise<void> {
-    await this.request('POST', '/v1/stop', { body: {}, timeoutMs: TIMEOUT_MS.stop })
+    await this.request('POST', '/v1/stop', { body: {}, timeoutMs: this.timeouts.stop })
   }
 
   private async request<T>(
