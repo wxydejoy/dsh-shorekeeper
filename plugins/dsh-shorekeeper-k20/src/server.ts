@@ -97,7 +97,11 @@ export class K20Gateway {
   private media: MediaState | null = null
   private layout: PhoneLayout | null = null
 
-  constructor(private readonly hubName: string) {}
+  private readonly hubName: string
+
+  constructor(hubName: string) {
+    this.hubName = hubName
+  }
 
   get currentSeq(): number {
     return this.seq

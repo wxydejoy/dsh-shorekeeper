@@ -13,7 +13,8 @@ import { createK20Tools } from './tools.ts'
 import { Config, hubBaseUrl, backgroundBaseUrl, type K20Config } from './config.ts'
 import { K20Gateway, registerK20Server } from './server.ts'
 
-export const inject = ['tools']
+// tools 必需；webServer 必需（cordis 4.0.5 只认 string[] 形式，obmc-web 同款先例）
+export const inject = ['tools', 'webServer']
 
 export { Config }
 
@@ -41,7 +42,7 @@ export function apply(ctx: Context, config: K20Config): void {
 
   // —— T7 直链：宿主有 webServer 且 serve 开启时，把 lan-protocol 服务化 ——
   // 客户端三面不自动改指向：部署时把插件 config 的 hubHost/port 指到本实例即可
-  // （如 http://127.0.0.1:3090），工具与网关路由同源。
+  // （如 http://10.14.14.117:3090），工具与网关路由同源。
   if (!config.serve) return
   const webServer = getWebServer(ctx)
   if (webServer === undefined) {
@@ -57,15 +58,16 @@ interface WebServerLike {
   register(route: { kind: 'exact' | 'prefix'; path: string; handler: (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => unknown }): () => unknown
 }
 
-/** 034 兼容模式：宿主没有 webServer 时返回 undefined，不抛 */
+/** optional 注入 + 软取双保险：cordis 把注入服务挂 ctx 属性，缺失时不抛 */
 function getWebServer(ctx: Context): WebServerLike | undefined {
-  try {
-    const value = (ctx as { get?: (name: string) => unknown }).get?.('webServer')
+  const candidates = [
+    (ctx as unknown as { webServer?: unknown }).webServer,
+    (ctx as { get?: (name: string) => unknown }).get?.('webServer'),
+  ]
+  for (const value of candidates) {
     if (value !== null && value !== undefined && typeof (value as { register?: unknown }).register === 'function') {
       return value as WebServerLike
     }
-    return undefined
-  } catch {
-    return undefined
   }
+  return undefined
 }
