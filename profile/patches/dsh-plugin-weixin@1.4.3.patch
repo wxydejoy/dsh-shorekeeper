@@ -1,5 +1,43 @@
+diff --git a/src/agent-bridge.js b/src/agent-bridge.js
+index 7f84aa4a17c040b916e6de33c605e21f2be76a01..a0819609be9b00cd54c462d7223d18068f4e2630 100644
+--- a/src/agent-bridge.js
++++ b/src/agent-bridge.js
+@@ -135,6 +135,9 @@ export class AgentBridge {
+     // one that is only thinking - the user can see the difference in what they
+     // asked for, and 45s of silence during `npm test` reads as a dead bot.
+     this.progressToolAfterMs = options.progressToolAfterMs ?? 8_000
++    // Z7 提速（2026-11-05）：微信会话工具面裁剪。deny 经 tools.restrict 落在 agent scope，
++    // 只影响本会话的请求 tool 列表；dsh-tools 对未知名/空过滤会抛错，这里吞掉降级为不裁剪。
++    this.toolDenylist = Array.isArray(options.toolDenylist) ? options.toolDenylist.filter((n) => typeof n === 'string' && n.trim() !== '') : []
+     this.maxWaitMs = options.maxWaitMs ?? 20 * 60_000
+     this.pollMs = options.pollMs ?? 1_000
+     // The session event log is an in-memory snapshot; polling it is how a turn
+@@ -395,6 +398,14 @@ export class AgentBridge {
+     const presetId = await this.#presetId(presets)
+ 
+     const setup = async (agentCtx) => {
++      if (this.toolDenylist.length > 0) {
++        try {
++          agentCtx.tools?.restrict({ deny: this.toolDenylist })
++          this.log(`tool deny list applied (${this.toolDenylist.length} names)`)
++        } catch (error) {
++          this.errLog(`tools.restrict failed (continuing unrestricted): ${String(error)}`)
++        }
++      }
+       if (presetId !== undefined) await presets.mount(agentCtx, presetId)
+       if (route !== undefined) {
+         const install = await loadInstallModelSelection()
+@@ -403,7 +414,7 @@ export class AgentBridge {
+         }
+       }
+     }
+-    const hasSetup = presetId !== undefined || route !== undefined
++    const hasSetup = presetId !== undefined || route !== undefined || this.toolDenylist.length > 0
+     return { agentOptions, setup: hasSetup ? setup : undefined }
+   }
+ 
 diff --git a/src/index.js b/src/index.js
-index 5d87c64d2e187c4433cd2d2bd6d0c41d2a87ce44..fdcfcc2c2fbad76b8e782ce40c504480236a4de1 100644
+index 5d87c64d2e187c4433cd2d2bd6d0c41d2a87ce44..442db670f8780628df5325553269985a84e4c6ce 100644
 --- a/src/index.js
 +++ b/src/index.js
 @@ -175,6 +175,28 @@ import {
@@ -31,7 +69,26 @@ index 5d87c64d2e187c4433cd2d2bd6d0c41d2a87ce44..fdcfcc2c2fbad76b8e782ce40c504480
  export const name = 'dsh-weixin'
  
  /**
-@@ -928,7 +950,7 @@ export function apply(ctx, config) {
+@@ -343,6 +365,10 @@ export const Config = z.object({
+   digestWhen: z.string().default(DEFAULT_DIGEST_WHEN).description('日报时间，形如「每天 21:00」或「每周五 18:30」。'),
+   memoryReviewEnabled: z.boolean().default(true).description('每周到点发一条记忆核对：「我记住的这些还准吗」，你回 /remember 或 /forget 纠正。'),
+   memoryReviewWhen: z.string().default(DEFAULT_REVIEW_WHEN).description('记忆核对时间，形如「每周日 20:00」。'),
++  toolDenylist: z.array(z.string()).default([]).description(
++    'Tool names to hide from Weixin conversations (Z7 提速：微信用不上 agent-browser/sheetagent/office 一类). ' +
++    'Applied per-conversation via tools.restrict({ deny }) on the agent scope; empty = no restriction (default).',
++  ),
+   toolAudit: z.boolean().default(true).description(
+     'Append one JSONL line per tool the agent runs (tool name, truncated arguments, which Weixin account/conversation/sender caused it, and whether the result carried an error) under <state>/audit/. Off by default nothing would ever answer "who ran that destructive tool yesterday"; a missing directory or a full disk only warns, it never fails a turn.',
+   ),
+@@ -587,6 +613,7 @@ export function apply(ctx, config) {
+       bridge = new AgentBridge({
+         ctx,
+         cwd,
++        toolDenylist: config.toolDenylist,
+         progressAfterMs: config.progressAfterMs,
+         progressToolAfterMs: config.progressToolAfterMs,
+         progressEveryMs: config.progressEveryMs,
+@@ -928,7 +955,7 @@ export function apply(ctx, config) {
                `</weixin_subscription>`,
              ].filter((part) => part !== '').join('\n\n')
              const result = await bridge.summarize({ conversationId: item.conversationId, accountId: item.accountId, prompt, sessionPrefix: 'wx-sub-', route: sideRoute('report') })
@@ -40,7 +97,7 @@ index 5d87c64d2e187c4433cd2d2bd6d0c41d2a87ce44..fdcfcc2c2fbad76b8e782ce40c504480
              if (text === '' || text === '（已取消）') {
                log(`subscription ${item.id} produced nothing to send`)
                return
-@@ -1031,7 +1053,7 @@ export function apply(ctx, config) {
+@@ -1031,7 +1058,7 @@ export function apply(ctx, config) {
              sessionPrefix: 'wx-pro-',
              route: sideRoute('proactive'),
            })
