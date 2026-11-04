@@ -58,6 +58,41 @@ describe('KeeperClient', () => {
     const dead = new KeeperClient({ baseUrl: 'http://127.0.0.1:1' })
     await expect(dead.health()).rejects.toMatchObject({ code: 'network' })
   })
+
+  it('端点 404 → 归一化错误（Z9 分支一）', async () => {
+    // baseUrl 指到 mock 的未知子路径：health 打到不存在的路由 → 404 + error JSON
+    const wrongRoute = new KeeperClient({ baseUrl: `${mock.url}/nowhere` })
+    await expect(wrongRoute.health()).rejects.toMatchObject({ status: 404, code: 'not_found' })
+  })
+
+  it('端点超时 → timeout 错误（Z9 分支二）', async () => {
+    mock.hang = true
+    const client = new KeeperClient({ baseUrl: mock.url, timeouts: { speech: 60 } })
+    await expect(client.speech({ input: '在吗' })).rejects.toMatchObject({ code: 'timeout' })
+  })
+
+  it('连接拒绝 → network 错误（Z9 分支三，工具层不抛）', async () => {
+    const refused = new KeeperClient({ baseUrl: 'http://127.0.0.1:9' }) // discard 端口，立即 RST
+    await expect(refused.speech({ input: '在吗' })).rejects.toMatchObject({ code: 'network' })
+    const tools = createKeeperTools({ client: refused, config: { speed: 1.0, sampleText: 'x' } })
+    const result = (await tools.find((t) => t.name === 'keeper.voice_test')?.execute({ text: '在吗' }, {} as never)) as {
+      ok: false
+      degraded: string
+    }
+    expect(result.ok).toBe(false)
+    expect(result.degraded).toContain('不可达')
+  })
+
+  it('端点 404 → 工具层优雅降级不抛（Z9）', async () => {
+    // 把 baseUrl 指到 mock 的未知路径根：speech 打到不存在的路由 → 404
+    const wrongRoute = new KeeperClient({ baseUrl: `${mock.url}/nowhere` })
+    const tools = createKeeperTools({ client: wrongRoute, config: { speed: 1.0, sampleText: 'x' } })
+    const result = (await tools.find((t) => t.name === 'keeper.voice_test')?.execute({ text: '在吗' }, {} as never)) as {
+      ok: false
+      degraded: string
+    }
+    expect(result.ok).toBe(false)
+  })
 })
 
 describe('keeper 工具面', () => {

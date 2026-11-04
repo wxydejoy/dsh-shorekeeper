@@ -10,6 +10,8 @@ export interface MockKeeper {
   ready: boolean
   /** 让 /v1/audio/speech 抛 InterruptedError → 502 stopped */
   interrupt: boolean
+  /** 让 /v1/audio/speech 永不响应（超时分支用） */
+  hang: boolean
   close(): Promise<void>
 }
 
@@ -21,6 +23,7 @@ export function createMockKeeper(options: { port?: number; ready?: boolean; wav?
     stopped: 0,
     ready: options.ready ?? true,
     interrupt: false,
+    hang: false,
   }
 
   const server = createServer((request, response) => {
@@ -62,6 +65,7 @@ export function createMockKeeper(options: { port?: number; ready?: boolean; wav?
         respond(response, 503, { error: { code: 'not_ready', message: '模型加载中' } })
         return
       }
+      if (state.hang) return new Promise<void>(() => {}) // 永不响应：超时分支
       const input = typeof body.input === 'string' ? body.input : ''
       if (!input.trim()) {
         respond(response, 400, { error: { code: 'bad_request', message: 'input 不能为空' } })
@@ -134,6 +138,12 @@ export function createMockKeeper(options: { port?: number; ready?: boolean; wav?
         },
         set interrupt(value: boolean) {
           state.interrupt = value
+        },
+        get hang() {
+          return state.hang
+        },
+        set hang(value: boolean) {
+          state.hang = value
         },
         close: () => new Promise((done) => server.close(() => done())),
       })

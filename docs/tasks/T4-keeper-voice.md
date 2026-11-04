@@ -30,7 +30,7 @@ keeper-tts 是 Python 独立进程（`reference/tts/server.py` 快照），本�
 ### 阶段三：插件实现（3–4h）
 - [x] provider 注册 + 流式分句播放（修正：provider 是 **dsh-tts 的 custom provider 配置接线**，零代码；流式分句/播放/barge-in 由 dsh-tts 播放器承担；本插件出 `keeper.status` / `keeper.voice_test` / `keeper.stop` 三工具，11 条单测全绿）
 - [x] `keeper.voice_test` 试听工具
-- [ ] barge-in 桥：voice-mode 打断事件 → `POST /stop`（第一层 dsh-tts 播放器自带 ✅；第二层 voice-mode 公开打断钩子未露出 ⏸ T1 看其事件面，无则降级为手动工具）
+- [x] barge-in 桥：voice-mode 打断事件 → `POST /stop`（第一层 dsh-tts 播放器自带 ✅；第二层 **Z9 已定论：voice-mode 0.7.34 无公开打断钩子，降级为手动停止工具**——keeper.stop 即该层，证据与将来接线条件见 plugins/dsh-keeper-voice/docs/barge-in-decision.md）
 - [ ] 字幕联动：speak 时调 T2 的 `k20.caption`（⏸ 待 T1 真机后接 hooks；k20.caption 走 T2 的协议增补提案路由）
 
 ### 阶段四：唤醒词决策（2–4h）
@@ -68,3 +68,9 @@ keeper-tts 是 Python 独立进程（`reference/tts/server.py` 快照），本�
 - **SDK 实测新发现**：`@deepseek-ai/dsh-tools` 把 10 个兄弟包声明为 peer 且 npm legacy 模式不自动装——插件 devDeps 已显式钉全（reproducibility 顺带解决）；`dsh-voice-mode@0.7.34` 拖 0.2.0-rc.2 旧内部，与 0.2.1-rc.5 宿主同装会 ERESOLVE——**T1 兼容矩阵要专测 voice-mode 与 rc.5 的共装**。
 - ⏸ 待 T1/真机：barge-in 桥第二层（voice-mode 事件面）、字幕联动 hooks（T2 提案路由）、唤醒词决策（阶段四）、打断闭环真机验收。
 - 2026-11-04（W3 对齐）：分支 T4-keeper-voice 已合入 main（192b9a6）；人工项＝W9 音色对比；keeper-tts /health 已绿，OpenAI 兼容端点待 dock W8 合入后补测（W2 冒烟③挂起项）。
+
+### 2026-11-05 · zcode · Z9 agent 侧收尾（分支 fix/z9-voice-bridge）
+- **降级三分支单测补齐**（15/15 全绿）：端点 404（错路由 → status 404 归一化 + 工具层优雅降级）、超时（KeeperClientOptions.timeouts 可注入，mock hang 模式 60ms 实测 timeout 分支）、连接拒绝（:9 discard 端口 → network，工具层 degraded 文案）。原先只有「服务不在」一路。
+- **barge-in 第二层定论**：voice-mode 0.7.34 无公开打断钩子（inject 纯消费、barge-in 内部闭环、subscribe 仅音频帧广播）——降级为手动停止工具（keeper.stop 已在位），将来上游长出事件面一行接上。决策记录：`plugins/dsh-keeper-voice/docs/barge-in-decision.md`。
+- **8bit 情绪 tag**：服务端 speech 只消费 input/voice/speed/response_format/play/play_only，无 emotion 参数位——跳过透传（同决策记录附录）。
+- **不做**（留 T4 原任务书）：真机打断闭环、唤醒词链路、字幕联动 hooks（全要真人真机）。
