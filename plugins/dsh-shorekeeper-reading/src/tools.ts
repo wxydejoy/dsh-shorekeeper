@@ -1,14 +1,17 @@
-/** reading 工具面：shelf / progress / note / ask。全部 read-only 数据修改经守岸人对话完成（任务书权限口径）。
- * 听书模式（调 keeper-voice 流式朗读）⏸ 联调依赖 T4；记忆插件联动 ⏸ T3 选型。
+/** reading 工具面：shelf / progress / note / ask / listen / stop / resume。
+ * 全部 read-only 数据修改经守岸人对话完成（任务书权限口径）。
+ * 听书三件（Z8）：keeper-tts 服务端喇叭朗读，打断=再来一条指令即停（barge-in 桥 ⏸ T4）。
  */
 
 import { defineTool, type ToolDefinition } from '@deepseek-ai/dsh-tools'
 import { ShelfStore, type Book } from './shelf.ts'
+import type { ListenEngine, ListenStatus } from './listen.ts'
 
 type Json = string | number | boolean | null | Json[] | { [key: string]: Json }
 
 export interface ReadingToolDeps {
   store: ShelfStore
+  listen: ListenEngine
 }
 
 function describeBook(book: Book): string {
@@ -23,8 +26,34 @@ function describeBook(book: Book): string {
   return bits.join(' · ')
 }
 
+function listenSummary(status: ListenStatus | null, prefix: string): string {
+  if (!status) return `${prefix}当前没有听书任务。`
+  const at = status.totalChunks > 0 ? `（第 ${status.chunkIndex + 1}/${status.totalChunks} 段）` : ''
+  return `${prefix}《${status.title}》${at}`
+}
+
+/** 听书起播共用：开引擎 → 组装回复。想读状态联动在读。 */
+function startListening(
+  deps: ReadingToolDeps,
+  book: Book,
+  options: { timerMin?: number; speed?: number },
+): Json {
+  const { store, listen: engine } = deps
+  if (book.status === 'wishlist') store.updateProgress(book.id, {}) // 想读 → 在读联动
+  const started = engine.start(book, options)
+  if (!started) {
+    return { ok: false, degraded: '已经在读着了（reading.stop 可停）', status: toJson(engine.status) } satisfies Json
+  }
+  const status = engine.status
+  return {
+    ok: true,
+    status: toJson(status),
+    summary: listenSummary(status, '读起来了：') + '，我读着，你听。',
+  } satisfies Json
+}
+
 export function createReadingTools(deps: ReadingToolDeps): ToolDefinition[] {
-  const { store } = deps
+  const { store, listen: engine } = deps
 
   const shelf = defineTool({
     name: 'reading.shelf',
@@ -169,7 +198,101 @@ export function createReadingTools(deps: ReadingToolDeps): ToolDefinition[] {
     },
   })
 
-  return [shelf, progress, note, ask]
+  const listen = defineTool({
+    name: 'reading.listen',
+    description:
+      '开始听书：从指定书（或断点）起，用守岸人的克隆音色在 Mac Mini 喇叭朗读。守岸人「给我读会儿书」「接着昨晚的读」就调这里。语速 0.5–2.0。',
+    parameters: {
+      book: { type: 'string', description: '书名或书 id（唯一命中即可）' },
+      timerMin: { type: 'number', description: '定时分钟数（到点自动停；缺省沿用上次定时）' },
+      speed: { type: 'number', description: '语速 0.5–2.0（缺省 1.0）' },
+    },
+    output: {
+      schema: { type: 'json' },
+      render: (_args, value) => [{ type: 'text', text: summaryOf(value) }],
+    },
+    async execute(args) {
+      const query = typeof args.book === 'string' ? args.book.trim() : ''
+      const book = query ? store.findBook(query) : engine.resumeCandidate()
+      if (!book) {
+        return {
+          ok: false,
+          degraded: query
+            ? `书架上没有找到「${query}」`
+            : '还没在听的书：说个书名，我给你从头读或接着上次的读',
+        } satisfies Json
+      }
+      if (engine.status?.playing) {
+        return { ok: false, degraded: '已经在读着了（reading.stop 可停）', status: toJson(engine.status) } satisfies Json
+      }
+      if (store.readBookText(book) === null) {
+        return { ok: false, degraded: `《${book.title}》的书文件不在盘上（未迁移），读不了` } satisfies Json
+      }
+      const options: { timerMin?: number; speed?: number } = {}
+      if (typeof args.timerMin === 'number' && args.timerMin > 0) options.timerMin = Math.min(120, args.timerMin)
+      if (typeof args.speed === 'number') options.speed = args.speed
+      return startListening(deps, book, options)
+    },
+  })
+
+  const stop = defineTool({
+    name: 'reading.stop',
+    description: '停止听书（打断朗读，记下断点，下次能接着读）。守岸人「别读了」「停一下」就调这里。',
+    parameters: {},
+    output: {
+      schema: { type: 'json' },
+      render: (_args, value) => [{ type: 'text', text: summaryOf(value) }],
+    },
+    async execute() {
+      if (!engine.status?.playing) {
+        return { ok: true, status: toJson(engine.status), summary: listenSummary(engine.status, '本来就没在读。') } satisfies Json
+      }
+      const result = await engine.stop()
+      const how = result?.stoppedBy === 'timer' ? '到时间了' : '停下了'
+      return {
+        ok: true,
+        status: toJson(result),
+        summary: `${how}，《${result?.title ?? ''}》记到 ${result ? Math.round(result.offset) : 0} 字处，下次接着读。`,
+      } satisfies Json
+    },
+  })
+
+  const resume = defineTool({
+    name: 'reading.resume',
+    description: '断点续读：从上次停下的地方继续读（不指定书就续最近在听的那本）。',
+    parameters: {
+      book: { type: 'string', description: '书名或书 id（缺省续 current）' },
+      timerMin: { type: 'number', description: '定时分钟数' },
+      speed: { type: 'number', description: '语速 0.5–2.0' },
+    },
+    output: {
+      schema: { type: 'json' },
+      render: (_args, value) => [{ type: 'text', text: summaryOf(value) }],
+    },
+    async execute(args) {
+      const query = typeof args.book === 'string' ? args.book.trim() : ''
+      const book = query ? store.findBook(query) : engine.resumeCandidate()
+      if (!book) {
+        return { ok: false, degraded: '没有可续读的书（还没听过）' } satisfies Json
+      }
+      if (engine.status?.playing) {
+        return { ok: false, degraded: '已经在读着了（reading.stop 可停）', status: toJson(engine.status) } satisfies Json
+      }
+      if (store.readBookText(book) === null) {
+        return { ok: false, degraded: `《${book.title}》的书文件不在盘上（未迁移），读不了` } satisfies Json
+      }
+      const options: { timerMin?: number; speed?: number } = {}
+      if (typeof args.timerMin === 'number' && args.timerMin > 0) options.timerMin = Math.min(120, args.timerMin)
+      if (typeof args.speed === 'number') options.speed = args.speed
+      return startListening(deps, book, options)
+    },
+  })
+
+  return [shelf, progress, note, ask, listen, stop, resume]
+}
+
+function toJson(value: unknown): Json {
+  return JSON.parse(JSON.stringify(value ?? null)) as Json
 }
 
 function summaryOf(value: unknown): string {
