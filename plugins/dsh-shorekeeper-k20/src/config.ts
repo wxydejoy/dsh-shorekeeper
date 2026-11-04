@@ -17,6 +17,10 @@ export interface K20Config {
   captionScale: number
   /** 熄屏高危开关：false 时 k20.lock 一律拒绝 */
   lockEnabled: boolean
+  /** 网关服务端：在宿主 webServer 上把 lan-protocol 服务化（T7 直链） */
+  serve?: boolean
+  /** /health 上报的名字（安卓设置页展示；与旧 hub 的房间名对齐） */
+  serverName?: string
 }
 
 export const Config = Schema.object({
@@ -27,6 +31,8 @@ export const Config = Schema.object({
   backgroundPort: Schema.number().min(1).max(65535).description('安卓端 BackgroundServer 端口').default(17920),
   captionScale: Schema.number().min(60).max(140).description('字幕默认字号缩放百分比').default(100),
   lockEnabled: Schema.boolean().description('允许熄屏（高危；关闭时 k20.lock 直接拒绝）').default(false),
+  serve: Schema.boolean().description('在本实例 webServer 上开 k20 网关路由（T7 直链；需要宿主有 webServer）').default(false),
+  serverName: Schema.string().description('/health 上报的名字（安卓设置页展示）').default('study'),
 })
 
 export function hubBaseUrl(config: K20Config): string {
