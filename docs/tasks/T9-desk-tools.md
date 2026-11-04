@@ -24,9 +24,9 @@
 - [x] 真机验收：温度计真读数（25.4°C/58%）；控灯一次（2026-11-04 20:45 漂泊者点头开闸，21:21 微信「再试一下」→ desk_mi_light 真关台灯，米家回「台灯 已关闭」）
 
 ## 验收标准
-- [ ] 会话里「现在几点」「屋里多少度」都由工具确定性回答
-- [ ] `desk_mi_light` 在 controlEnabled=false 时被拒且文案说明原因
-- [ ] 拔掉 auth.json 所有工具优雅降级不崩
+- [x] 会话里「现在几点」「屋里多少度」都由工具确定性回答（证据：本文件验收记录 2026-11-03 端到端——desk_now「早上 6:52，周二」、desk_mi_sensor「不冷不潮，挺舒服。」25.4°C/58%；微信侧 2026-11-04 21:21 控灯同链路实证）
+- [x] `desk_mi_light` 在 controlEnabled=false 时被拒且文案说明原因（证据：同上端到端——「需要你把米家插件的写入控制打开……开灯得你手动按一下」；单测 `desk_mi_light 闸门（红线）› controlEnabled=false：一律拒绝且不动桥` tools.test.ts:90）
+- [x] 拔掉 auth.json 所有工具优雅降级不崩（单测已覆盖，引用测试名不重测：`desk_mi_sensor › 桥失败：降级不抛` tools.test.ts:79，mock `code:'auth-expired'`；未知传感器名同有降级用例 tools.test.ts:72）
 
 ## 风险与对策
 | 风险 | 对策 |

@@ -10,10 +10,10 @@
 |---|---|---|---|---|
 | `service.py`（编排核心） | 2663 | 拆解退役：编排逻辑由 dsh agent loop 接管 | T7 | ⚪ |
 | `config.py` | 2213 | 瘦身为 hub-lite（k20 网关单页配置） | T7 | ⚪ |
-| `companion_flow.py` | 902 | 对话流程 → dsh agent loop + voice-mode | T3/T4 | ⚪ |
+| `companion_flow.py` | 902 | 对话流程 → dsh agent loop + voice-mode（T3/T4 完工前，语音面暂由 dsh-k20 网关代理回 hub 服役——2026-11-04 21:00 实证 chat/memory/media 经代理全通，她的声音没哑） | T3/T4 | ⚪ |
 | `intents.py` | 859 | 意图分流 → 角色卡世界书规则 + 工具路由 system prompt | T3 | ⚪ |
 | `books.py` | 758 | 阅读能力 → dsh-shorekeeper-reading（书架/进度/摘抄/听书） | T5 | ⚪ |
-| `server.py` | 757 | HTTP 骨架退役；仅 k20 长轮询端点保留最小实现 | T2/T7 | ⚪ |
+| `server.py` | 757 | HTTP 骨架退役；k20 长轮询端点已由 dsh-shorekeeper-k20 网关接管（`plugins/dsh-shorekeeper-k20/src/server.ts` 六路由，2026-11-04 20:20 直链实证：k20 app ESTABLISHED :3090，hub 的 k20 面无现役调用方） | T2/T7 | 🔵 |
 | `companion_desk.py` | 731 | 桌面陪伴逻辑 → 守岸人角色卡内容 | T3 | ⚪ |
 | `persona.py` | 599 | 人格 → Tavern 角色卡 + 世界书 | T3 | ⚪ |
 | `mijia_bridge.py` + `mijia_catalog.py` | ~1000 | **整块退役**：面板=mijia-sidebar；「用嘴控灯/读数」= dsh-shorekeeper-desk-mi（T9 done：B2 真控已验、check-all 全绿、已进 web profile） | T9 | 🟢 |
@@ -47,7 +47,7 @@
 | `content/shorekeeper-card/` | T3 | 角色卡 + 世界书 + 预设（人格内容工程，含周报/仪式 skill；周报数据源 memory） |
 | `plugins/dsh-keeper-voice` | T4 | 克隆音色注册为 TTS provider + 打断闭环 |
 | `plugins/dsh-shorekeeper-reading` | T5 | 阅读：书架、进度、摘抄、听书（books.py 重生） |
-| `plugins/dsh-shorekeeper-wechat` | T6 | 微信接入：摘要/代读/审批代发 |
+| `plugins/dsh-shorekeeper-wechat` | T6 | 微信接入：摘要/代读/审批代发——**v2 决策改道**：入口由生态件 dsh-plugin-weixin 承担（2026-11-04 21:21 微信关台灯全链路实证），自写桥本体（12+15 测绿）归档不再迁移 |
 | `profile/` | T1/T8 | 生态插件清单 + cordis.patch.yml + 一键安装 |
 
 > 2026-11-02 名单修订：dsh-desk-senses、dsh-desk-life 已砍（前者归 k20，后者由生态件 + skill 覆盖）。

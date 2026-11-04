@@ -1,7 +1,7 @@
 # T8 · 集成、发布与端到端验收
 
 ```
-状态: review（install.sh 骨架与钉版清单已合 main；全新目录演练与十条场景待真机） · owner: 值班 agent · 预估: 10–12 agent 小时 · 前置: T2–T7 全部完成
+状态: review（install.sh 钉版清单已填实并随实况修正——dsh-plugin-weixin 入厂、自写 wechat 撤出、消毒 patch 入厂流程；README 快速开始 30 分钟版成稿；全新目录演练与十条场景留人工） · owner: 值班 agent · 预估: 10–12 agent 小时 · 前置: T2–T7 全部完成
 分支: T8-integrate
 ```
 
@@ -12,9 +12,9 @@
 ## 步骤
 
 ### 阶段一：一键安装（3–4h）
-- [x] `profile/install.sh`：装 dsh（钉版本）→ 装生态插件清单 → 装 4 个自写插件 → 写入 cordis.patch.yml 默认值（骨架完成：dsh@0.2.1-rc.5 钉死、自写 4 插件 file: 链接、patch 覆盖保护；**生态插件清单为占位**，以 T1《替代决策清单》钉版本）
-- [ ] 全新目录演练安装（模拟新机器），问题回写脚本（⏸ 待 T1 清单落锤后真机演练）
-- [ ] README「快速开始」补 30 分钟装机流程（⏸ 随演练一并写）
+- [x] `profile/install.sh`：装 dsh（钉版本）→ 装生态插件清单 → 装 4 个自写插件 → 写入 cordis.patch.yml 默认值（**2026-11-04 钉版清单已填实**：T1 清单 10 件 + dsh-plugin-weixin@1.4.3（微信入口，2026-11-04 21:21 全链路实证）；自写 wechat 按 v2 决策撤出链接清单；新增消毒 pnpm patch 应用步骤（profile/patches/dsh-plugin-weixin@1.4.3.patch，防中毒循环复发）；~~占位符~~ 已清）
+- [ ] 全新目录演练安装（模拟新机器），问题回写脚本（⏸ 真机演练留人工）
+- [x] README「快速开始」补 30 分钟装机流程（草稿成文：根 README「快速开始（30 分钟目标）」段；演练校准留人工）
 
 ### 阶段二：端到端剧本（4–5h）
 十条场景逐条真机走查，每条留证据（草案成文 `docs/e2e-scenarios.md`，链路与判据已映射到各任务产出）：
@@ -64,3 +64,8 @@
 - `docs/compat-matrix.md`：版本钉死表 + 兼容矩阵（✅ 已实测：defineTool DSL / tools.register / Schemastery；⚠️ voice-mode 共装；❌ 两个已知缺口：dispose 事件、installSection——均来自 T2/T4 的 SDK 实测）+ 四步升级流程。
 - ⏸ 全部真机项等待 T1《替代决策清单》落锤；本任务的真机走查零虚标。
 - 2026-11-04（W3 对齐）：分支 T8-integrate 已合入 main（73f2c88）；人工项＝全新目录演练 + 十条场景；W2 踩坑已回灌 install.sh（file:→link:、TS 参数属性禁令）。
+
+### 2026-11-04 · zcode · 阶段一收口（Z11 文档收口）
+- install.sh 生态清单从「占位」转「填实」并随实况修正三处：①生态清单补 `dsh-plugin-weixin@1.4.3`（现役微信入口，T6 v2 定案 + 21:21 实证）；②自写插件链接清单撤出 `dsh-shorekeeper-wechat`（v2 决策归档不装机）；③新增 pnpm patch 应用步骤——把 `profile/patches/dsh-plugin-weixin@1.4.3.patch` 拷进 profile patches 并登记 pnpm-workspace.yaml（主动消息消毒，防中毒循环随全新装机复发；同 feiyu@4.0.2 先例）。
+- README 快速开始改写为 30 分钟节奏版（0-5 装 / 5-10 链接 / 10-15 配置 / 15-25 凭据 / 25-30 启动冒烟），演练校准留人工。
+- 剩余人工：全新目录演练装机、十条 e2e 场景、M1/M2/v1.0 tag。

@@ -18,6 +18,9 @@
 | feiyu-memory | 4.0.2 | 人格+日记记忆 | ✅ 召回逐字、密钥硬拦（D10） |
 | dsh-calendar | 0.14.3 | CalDAV 日历 7 工具 | ✅ 工具面+自检；凭据留人 |
 | dsh-notify-me | 1.17.0 | 通知+外推（含 Bark） | ✅ 能力面；真机留人 |
+| dsh-plugin-weixin | 1.4.3 | 微信入口（个人微信 iLink 扫码，T6 v2 定案） | ✅ 2026-11-04 21:21 全链路实证（微信关台灯）；**装时必须带消毒 patch**（见 `patches/`，防主动消息中毒循环） |
+
+> **自写 `dsh-shorekeeper-wechat` 已归档不装机**（v2 决策：入口由 dsh-plugin-weixin 承担）；其 pnpm patch 机制同 feiyu@4.0.2 先例，patch 文件在 `patches/dsh-plugin-weixin@1.4.3.patch`，install.sh 自动登记。
 
 **明确不装**（判死记录见 docs/decisions.md）：dsh-weather 0.1.0（D4 死刑）· dsh-tool-weather（与 glass-weather 重复）· dsh-pc-manager / dsh-calendar-diary / dsh-memory-center / dsh-full-life-memory / dsh-system-hud / dsh-mobile-notify（npm 无此包，D5）· memsearch（非记忆插件，误会）· dsh-daoing-memory / dsh-diary-memory / dsh-zdiary-kit / dsh-diary（选型出局/备选）· dsh-notify-bark（notify-me 内建）· dsh-roleplay / pmp-dsh-tavern（tavern 保留）
 

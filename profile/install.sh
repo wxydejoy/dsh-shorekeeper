@@ -3,7 +3,8 @@
 #
 # 前置：macOS（Mac Mini）；homebrew；git
 # 产出：dsh 装好、shorekeeper profile 建好、4 个自写插件链接进 profile、
-#       生态插件按《替代决策清单》安装并钉版本。
+#       生态插件按《替代决策清单》安装并钉版本（含微信入口 dsh-plugin-weixin+消毒 patch；
+#       自写 wechat 桥按 T6 v2 决策归档，不再装机）。
 set -euo pipefail
 
 DSH_VERSION="0.2.1-rc.5"          # 方案钉死；升级先跑 docs/compat-matrix.md
@@ -22,8 +23,22 @@ fi
 say "2/5 建 profile（${PROFILE_NAME}）"
 dsh --profile "${PROFILE_NAME}" --from-default-profile web
 
-say "3/5 生态插件安装（T1 钉版清单 2026-11-03 · D4–D15）"
+say "3/5 生态插件安装（T1 钉版清单 2026-11-03 · D4–D15；dsh-plugin-weixin 2026-11-04 增补）"
 # 判死/不装名单与依据见 T1 验收记录（docs/decisions.md）与 profile/README.md
+
+# 微信入口（T6 v2 定案）：装前先登记消毒 pnpm patch——弱模型复述脚手架的中毒循环
+# 修复（sanitizeProactiveText），见 profile/patches/ 与 docs/tasks/T6-wechat.md 验收记录。
+WS_FILE="$HOME/.dsh/profiles/${PROFILE_NAME}/pnpm-workspace.yaml"
+PATCH_SRC="${REPO_DIR}/profile/patches/dsh-plugin-weixin@1.4.3.patch"
+PATCH_DST="$HOME/.dsh/profiles/${PROFILE_NAME}/patches/dsh-plugin-weixin@1.4.3.patch"
+mkdir -p "$HOME/.dsh/profiles/${PROFILE_NAME}/patches"
+cp "${PATCH_SRC}" "${PATCH_DST}"
+if [ -f "$WS_FILE" ] && ! grep -q 'patchedDependencies' "$WS_FILE"; then
+  printf '\npatchedDependencies:\n  dsh-plugin-weixin@1.4.3: patches/dsh-plugin-weixin@1.4.3.patch\n' >> "$WS_FILE"
+elif [ -f "$WS_FILE" ] && ! grep -q 'dsh-plugin-weixin@1.4.3' "$WS_FILE"; then
+  printf '  dsh-plugin-weixin@1.4.3: patches/dsh-plugin-weixin@1.4.3.patch\n' >> "$WS_FILE"
+fi
+
 for pkg in \
   dsh-glass-weather@0.3.0 \
   dsh-weather-panel@1.8.0 \
@@ -35,6 +50,7 @@ for pkg in \
   feiyu-memory@4.0.2 \
   dsh-calendar@0.14.3 \
   dsh-notify-me@1.17.0 \
+  dsh-plugin-weixin@1.4.3 \
 ; do
   dsh plugin --profile "${PROFILE_NAME}" add "${pkg}"
 done
@@ -54,7 +70,7 @@ say "4/5 自写插件链接"
 # 拷进 .pnpm store，源码落到 node_modules 下，Node 的 TS strip-only 模式直接拒载
 # （ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING），症状同样是 boot 静默降级。
 # 同理插件源码不得用 TS 参数属性（constructor(readonly x)），strip-only 不支持。
-for plugin in dsh-shorekeeper-desk-mi dsh-shorekeeper-k20 dsh-keeper-voice dsh-shorekeeper-reading dsh-shorekeeper-wechat; do
+for plugin in dsh-shorekeeper-desk-mi dsh-shorekeeper-k20 dsh-keeper-voice dsh-shorekeeper-reading; do
   if [ ! -d "${REPO_DIR}/plugins/${plugin}/node_modules" ]; then
     echo "  ↳ ${plugin} 缺 node_modules，先装本地依赖…"
     (cd "${REPO_DIR}/plugins/${plugin}" && npm install --silent)

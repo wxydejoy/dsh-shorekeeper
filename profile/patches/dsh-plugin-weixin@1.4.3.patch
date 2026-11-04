@@ -1,0 +1,51 @@
+diff --git a/src/index.js b/src/index.js
+index 5d87c64d2e187c4433cd2d2bd6d0c41d2a87ce44..fdcfcc2c2fbad76b8e782ce40c504480236a4de1 100644
+--- a/src/index.js
++++ b/src/index.js
+@@ -175,6 +175,28 @@ import {
+   describeMediaFailures,
+ } from './media/inbound.js'
+ 
++/**
++ * 主动消息输出消毒（2026-11-04 现场补丁，见 docs/plans/plan-2026-11-04-night-zcode.md）。
++ *
++ * 实证到的中毒循环：弱模型把 <weixin_life> 状态块抄进回复 → 该回复原样进
++ * 「最近消息」历史与「你上一次主动发的是：「…」」示例 → 下轮模型照葫芦画瓢
++ * 复述整套脚手架（含 <weixin_proactive> 标签和「这次主动发的是：」）→ 再进历史。
++ * 这里在发送前把脚手架剥掉：能提取出正文就只发正文；整条都是状态块回声就返回
++ * 空串（调用方对空串的处理是跳过本次开口——宁可不发，不发毒）。
++ */
++function sanitizeProactiveText(raw) {
++  let text = String(raw ?? '').trim()
++  if (text === '') return ''
++  // 整套脚手架复述：提取「这次主动发的是：「…」」里真正的消息正文
++  const quoted = text.match(/这次主动发的是[：:]\s*[「『]?([^」』\n]+)[」』]?/)
++  if (quoted && quoted[1].trim() !== '') return quoted[1].trim()
++  // 少量标签残留：先剥掉包裹标签
++  text = text.replace(/<\/?weixin_proactive>/g, '').trim()
++  // 纯状态块回声（无正文可提）：放弃本次主动消息
++  if (/别把这段状态/.test(text) || /^当前状态：/m.test(text)) return ''
++  return text
++}
++
+ export const name = 'dsh-weixin'
+ 
+ /**
+@@ -928,7 +950,7 @@ export function apply(ctx, config) {
+               `</weixin_subscription>`,
+             ].filter((part) => part !== '').join('\n\n')
+             const result = await bridge.summarize({ conversationId: item.conversationId, accountId: item.accountId, prompt, sessionPrefix: 'wx-sub-', route: sideRoute('report') })
+-            const text = typeof result?.text === 'string' ? result.text.trim() : ''
++            const text = sanitizeProactiveText(typeof result?.text === 'string' ? result.text.trim() : '')
+             if (text === '' || text === '（已取消）') {
+               log(`subscription ${item.id} produced nothing to send`)
+               return
+@@ -1031,7 +1053,7 @@ export function apply(ctx, config) {
+             sessionPrefix: 'wx-pro-',
+             route: sideRoute('proactive'),
+           })
+-          const text = typeof result?.text === 'string' ? result.text.trim() : ''
++          const text = sanitizeProactiveText(typeof result?.text === 'string' ? result.text.trim() : '')
+           if (text === '' || text === '（已取消）') return ''
+           const plan = live.stickerEnabled !== false
+             ? takeStickers(text, { modeId: candidate.mode?.id, stateRoot, warn, keepBuiltins: live.stickerKeepBuiltins === true })
