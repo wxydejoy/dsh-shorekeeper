@@ -1,0 +1,217 @@
+/** k20 网关服务端（src/server.ts）单测：mock webServer + mock req/res，六张路由全过。
+ * 长轮询用短 wait 实测（50ms 内 bump），不依赖 fake timers。
+ */
+
+import { EventEmitter } from 'node:events'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import type { IncomingMessage, ServerResponse } from 'node:http'
+import { K20Gateway, registerK20Server } from '../src/server.ts'
+
+const TOKEN = 'test-token-1234'
+
+interface RecordedRoute {
+  kind: 'exact' | 'prefix'
+  path: string
+  handler: (req: IncomingMessage, res: ServerResponse) => unknown
+}
+
+/** mock webServer：只记录注册，dispatch 由测试挑路由调 handler */
+function createMockWebServer() {
+  const routes: RecordedRoute[] = []
+  return {
+    routes,
+    register(route: RecordedRoute): () => void {
+      routes.push(route)
+      return () => {}
+    },
+    find(method: string, url: string): RecordedRoute | undefined {
+      const path = url.split('?')[0] ?? url
+      return (
+        routes.find((r) => r.kind === 'exact' && r.path === path) ??
+        routes.find((r) => r.kind === 'prefix' && (path === r.path || path.startsWith(r.path)))
+      )
+    },
+    async dispatch(method: string, url: string, body?: unknown, headers: Record<string, string> = {}): Promise<MockRes> {
+      const path = url.split('?')[0] ?? url
+      const route = routes.find((r) => r.kind === 'exact' && r.path === path) ??
+        routes.find((r) => r.kind === 'prefix' && (path === r.path || path.startsWith(r.path)))
+      if (!route) throw new Error(`no route for ${method} ${url}`)
+      const req = createMockReq(method, url, body, headers)
+      const res = createMockRes()
+      await route.handler(req as unknown as IncomingMessage, res as unknown as ServerResponse)
+      return res
+    },
+  }
+}
+
+function createMockReq(method: string, url: string, body: unknown, headers: Record<string, string>): EventEmitter & { method: string; url: string; headers: Record<string, string> } {
+  const req = new EventEmitter() as EventEmitter & { method: string; url: string; headers: Record<string, string> }
+  req.method = method
+  req.url = url
+  req.headers = headers
+  queueMicrotask(() => {
+    if (body !== undefined) req.emit('data', Buffer.from(JSON.stringify(body)))
+    req.emit('end')
+  })
+  return req
+}
+
+interface MockRes {
+  status: number | undefined
+  body: unknown
+  headersSent: boolean
+  writeHead(status: number): unknown
+  end(payload?: string): void
+}
+
+function createMockRes(): MockRes {
+  const res: MockRes = {
+    status: undefined,
+    body: undefined,
+    headersSent: false,
+    writeHead(status) {
+      res.status = status
+      res.headersSent = true
+      return res
+    },
+    end(payload) {
+      if (typeof payload === 'string') res.body = JSON.parse(payload)
+    },
+  }
+  return res
+}
+
+function authHeaders(): Record<string, string> {
+  return { authorization: `Bearer ${TOKEN}` }
+}
+
+describe('k20 网关服务端', () => {
+  let web: ReturnType<typeof createMockWebServer>
+  let gateway: K20Gateway
+
+  beforeEach(() => {
+    web = createMockWebServer()
+    gateway = new K20Gateway('study')
+    registerK20Server({
+      ctx: { effect: (fn: () => void) => fn() } as never,
+      webServer: web,
+      config: { token: TOKEN, serverName: 'study' },
+      gateway,
+    })
+  })
+
+  afterEach(() => {
+    // 等待者都挂在 gateway 上，测试结束自然释放
+  })
+
+  it('/health：免鉴权，形状对齐 lan-protocol §6.1', async () => {
+    const res = await web.dispatch('GET', '/health')
+    expect(res.status).toBe(200)
+    expect(res.body).toEqual({ ok: true, service: 'dock-hub', protocol: 1, name: 'study' })
+  })
+
+  it('无 token → 401；错 token → 401', async () => {
+    const noAuth = await web.dispatch('GET', '/v1/snapshot')
+    expect(noAuth.status).toBe(401)
+    const badAuth = await web.dispatch('GET', '/v1/snapshot', undefined, { authorization: 'Bearer wrong' })
+    expect(badAuth.status).toBe(401)
+  })
+
+  it('/v1/snapshot：最小集形状，未接的面整个省略', async () => {
+    const res = await web.dispatch('GET', '/v1/snapshot', undefined, authHeaders())
+    expect(res.status).toBe(200)
+    const snap = res.body as Record<string, unknown>
+    expect(snap.protocol).toBe(1)
+    expect(snap.seq).toBe(0)
+    expect(snap.hub).toEqual({ name: 'study', mijia: 'ok', message: null })
+    expect(snap.devices).toEqual([])
+    expect(snap.media).toBeNull()
+    expect(snap.temperature).toBeNull()
+    expect(snap).not.toHaveProperty('phone')
+    expect(snap).not.toHaveProperty('companion')
+    expect(snap).not.toHaveProperty('caption')
+  })
+
+  it('caption：推 → snapshot 带文本/at/scale；clear → 键消失；空体 → 400；scale 越界 → 400', async () => {
+    const push = await web.dispatch('POST', '/v1/caption', { text: '漂泊者，晚上好。', scale: 110 }, authHeaders())
+    expect(push.status).toBe(200)
+    let snap = (await web.dispatch('GET', '/v1/snapshot', undefined, authHeaders())).body as Record<string, unknown>
+    expect(snap.caption).toMatchObject({ text: '漂泊者，晚上好。', scale: 110 })
+    expect(typeof (snap.caption as { at: string }).at).toBe('string')
+
+    const clear = await web.dispatch('POST', '/v1/caption', { clear: true }, authHeaders())
+    expect(clear.status).toBe(200)
+    snap = (await web.dispatch('GET', '/v1/snapshot', undefined, authHeaders())).body as Record<string, unknown>
+    expect(snap).not.toHaveProperty('caption')
+
+    const empty = await web.dispatch('POST', '/v1/caption', {}, authHeaders())
+    expect(empty.status).toBe(400)
+    const badScale = await web.dispatch('POST', '/v1/caption', { text: 'x', scale: 300 }, authHeaders())
+    expect(badScale.status).toBe(400)
+  })
+
+  it('phone/layout：rev 递增、槽位矩形部分合并；phone 只在写过布局后出现；非法矩形 → 400', async () => {
+    await web.dispatch('POST', '/v1/phone/layout', { layout: { modules: { Weather: { x: 0.6, y: 0.1, w: 0.3, h: 0.3, visible: false } } } }, authHeaders())
+    await web.dispatch('POST', '/v1/phone/layout', { layout: { modules: { Weather: { x: 0.55, visible: true }, Clock: { x: 0.05, y: 0.05, w: 0.4, h: 0.4, visible: true } } } }, authHeaders())
+    const snap = (await web.dispatch('GET', '/v1/snapshot', undefined, authHeaders())).body as {
+      phone?: { layout?: { rev: number; modules: Record<string, Record<string, unknown>> } }
+    }
+    expect(snap.phone?.layout?.rev).toBe(2)
+    expect(snap.phone?.layout?.modules.Weather).toMatchObject({ x: 0.55, visible: true, w: 0.3 })
+    expect(snap.phone?.layout?.modules.Clock?.visible).toBe(true)
+
+    const bad = await web.dispatch('POST', '/v1/phone/layout', { layout: { modules: { Clock: { x: 5 } } } }, authHeaders())
+    expect(bad.status).toBe(400)
+  })
+
+  it('lock：请求 → snapshot.lock.requested_at', async () => {
+    const res = await web.dispatch('POST', '/v1/lock', {}, authHeaders())
+    expect(res.status).toBe(200)
+    const snap = (await web.dispatch('GET', '/v1/snapshot', undefined, authHeaders())).body as { lock?: { requested_at?: string } }
+    expect(typeof snap.lock?.requested_at).toBe('string')
+  })
+
+  it('media：toggle 乐观翻转并进 snapshot；非法动作 → 400；未知设备 → 404', async () => {
+    const first = await web.dispatch('POST', '/v1/devices/media/command', { media: 'toggle' }, authHeaders())
+    expect(first.status).toBe(200)
+    expect((first.body as { playing: boolean }).playing).toBe(true)
+    const second = await web.dispatch('POST', '/v1/devices/media/command', { media: 'toggle' }, authHeaders())
+    expect((second.body as { playing: boolean }).playing).toBe(false)
+    const snap = (await web.dispatch('GET', '/v1/snapshot', undefined, authHeaders())).body as { media?: { playing: boolean } }
+    expect(snap.media?.playing).toBe(false)
+
+    const bad = await web.dispatch('POST', '/v1/devices/media/command', { media: 'pause' }, authHeaders())
+    expect(bad.status).toBe(400)
+    const unknown = await web.dispatch('POST', '/v1/devices/lamp/command', { on: true }, authHeaders())
+    expect(unknown.status).toBe(404)
+  })
+
+  it('companion 面：整面 404（companion_disabled）', async () => {
+    const res = await web.dispatch('POST', '/v1/companion/chat', { text: '在吗' }, authHeaders())
+    expect(res.status).toBe(404)
+    expect((res.body as { error?: { code?: string } }).error?.code).toBe('companion_disabled')
+  })
+
+  it('长轮询：since=当前 seq 时挂住，bump 后立刻醒；不带 since 立即返回', async () => {
+    const pending = web.dispatch('GET', '/v1/snapshot?since=0&wait=5', undefined, authHeaders())
+    let settled = false
+    void pending.then(() => {
+      settled = true
+    })
+    await new Promise((r) => setTimeout(r, 50))
+    expect(settled).toBe(false)
+    gateway.setCaption({ text: '醒', at: new Date().toISOString() })
+    const res = await pending
+    expect(res.status).toBe(200)
+    expect((res.body as { seq: number }).seq).toBe(1)
+
+    const immediate = await web.dispatch('GET', '/v1/snapshot', undefined, authHeaders())
+    expect(immediate.status).toBe(200)
+  })
+
+  it('长轮询超时是正常情况：wait 到点返回当前 snapshot', async () => {
+    const res = await web.dispatch('GET', '/v1/snapshot?since=999&wait=0', undefined, authHeaders())
+    expect(res.status).toBe(200)
+    expect((res.body as { seq: number }).seq).toBe(0)
+  })
+})
