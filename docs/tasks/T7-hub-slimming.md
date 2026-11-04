@@ -1,7 +1,7 @@
 # T7 · Hub 瘦身与退役
 
 ```
-状态: doing · owner: 值班 agent · 预估: 8–12 agent 小时 · 前置: T2–T6 全部完成
+状态: review（hub-slim 三路由已迁 dock main 并真机实证；k20 已直连 dsh:3090、companion 面由网关代理回 hub 服役中；retire 闸门机制已落地未翻批——三批退役与回滚演练待 Z10 起步 · 2026-11-04） · owner: 值班 agent · 预估: 8–12 agent 小时 · 前置: T2–T6 全部完成
 分支: T7-hub-slimming    （工作在岸亭仓库，分支 Shoreting:hub-slim）
 ```
 

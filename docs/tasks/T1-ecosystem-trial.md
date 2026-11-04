@@ -16,10 +16,10 @@
 ## 步骤
 
 ### 阶段一：环境（2h）
-- [ ] 装 dsh（`npx @deepseek-ai/dsh` 或官方安装路径），记录版本
-- [ ] 起两个实例：日常 `dsh web`（3080）/ 实验 `dsh web --port 3081`（独立 profile）
-- [ ] 实验实例里创建测试 profile，确认插件安装/卸载/重启流程
-- [ ] 写 `docs/decisions.md` 记录 dsh 版本与安装方式
+- [x] 装 dsh（`npx @deepseek-ai/dsh` 或官方安装路径），记录版本（dsh@0.2.1-rc.5，见 decisions.md §0）
+- [x] 起两个实例：日常 `dsh web`（现役 :3090 web profile）/ 实验 profile（lab 归档后收敛，见 docs/profile-shorekeeper-lab-archive.md）
+- [x] 实验实例里创建测试 profile，确认插件安装/卸载/重启流程（dsh plugin add/remove 与重启实操多轮）
+- [x] 写 `docs/decisions.md` 记录 dsh 版本与安装方式（D1–D14 在档）
 
 ### 阶段二：逐插件验证（每件 0.5–2h）
 对下列每个插件，产出验证记录（写入本文件末尾验收记录区）：

@@ -46,8 +46,65 @@
 - 微信侧会话（wx-pro-*、主会话）路由在**建立时焊死**，改 config.json 只对新会话生效。
 - k20 真值：host `http://k20.lan`、hubHost `http://127.0.0.1`、port 17890、背景面 17920、token 同 hub.yaml——live profile 已写真值，别用占位值。
 - ShelfStore 启动时读盘：动书库数据后要重启实例。
+- WorkBuddy agent 里 `nohup … &` 起的常驻进程随命令结束被杀；`launchctl bootstrap` 机器级坏——实例常驻这班**不碰**（Z1 已结）。
+- 思考拆面定调（21:45）：**安卓端/dock 不思考已钉 `reasoningEffort: off`；微信聊天保留思考**。禁止把 thinking disabled 焊到微信链路；别动 `~/.dsh-tui/*` 与 weixin 路由。
 
-## 五、进度（逐项追加，格式：`Z# · 时间 · 谁 · 一行结论`）
+## 五、第二批任务 Z7–Z12（22:15 追加 · T1–T9 迁移收尾 · **全部无需人工干预**）
+
+> 来源：漂泊者 22:15 指令「把没做的写成详细的、不需要人工干预的计划，晚上给 zcode」。
+> 范围裁剪：所有要**漂泊者在场**的项全部排除——熄屏（红线）、扫码/凭据、麦克风扬声器真人测试、
+> keeper-tts 真机听感、全新机器演练装机。这些留在原 T 文档，不在本批。
+> 做完的验收证据照旧引文件路径，别整段贴。
+
+### Z7 · 人格回归剧本自动化（T3 收口，分支 `fix/z7-persona-regression`）
+
+- 写 `scripts/persona-regression.mjs`（或 vitest 套件）：**≥20 条剧本**覆盖 早安问候 / 闲聊陪跑 / 查状态（屋里温度）/ 被喊名字 / 被打断（连发两条）/ 敏感话题试探 / 控制类混合句（「顺便把台灯关了」）/ 「小岸」称呼反应 / 「我看到 217 页了」进度句。
+- 跑法：`dsh headless`（T1 已实测 headless 组合可行）逐条喂给绑 shorekeeper 人格的会话，断言三类：①控制类指令**不触发剧情化回复**（回复里出现工具调用意图或简短确认，而非「让我们进入故事」式长文）；②第一人称与称呼体系一致（守岸人/漂泊者）；③无内部脚手架泄漏（`<weixin_` / 工具记号 / 状态块原文）。
+- 剧本与断言落 `content/shorekeeper-card/regression/`；**有差距改卡不改剧本**（T3 原则）。产出：回归报告写进 T3 文档验收记录区，全绿率与失败样本原文。
+- 注意：人格走 tavern 卡（T3 已交付）+ 微信人格双绑定现役，别动 persona-active.json。
+
+### Z8 · 听书链路（T5 主体，分支 `fix/z8-reading-listen`）
+
+- `plugins/dsh-shorekeeper-reading` 加听书三工具：`reading_listen`（开：从指定书/章节/断点起读）、`reading_stop`、`reading_resume`（断点续读）。TTS 直连 keeper-tts OpenAI 兼容端点 `POST http://127.0.0.1:18100/v1/audio/speech`（wav 整段返回，**不做流式**——引擎现状如此）。
+- 切句/打包规则**照搬** hub `dock_hub/speech.py`（参考块 37 字、短句按逗号回拼、5 字/秒钳位），规则文档已在 `migration/books-format.md` §4（36 字打包/预取下一句/断点续读）——实现前先读它，别自创。
+- 进度落 ShelfStore（现成 store），播放走 dsh-keeper-voice 桥（:18100 baseUrl 配置现成）；打断 = 再来一条指令即停（最简版，barge-in 桥 ⏸ 不在本批）。
+- 单测：mock TTS 端点（合成假 wav）覆盖 切句边界/断点保存恢复/stop 立即返/端点失联优雅报错。**真机听感验收留人工**，文档标注。
+- k20 字幕联动 ⏸（依赖 T2 提案路由，本批不做）；读完沉淀记忆 ⏸（T3 选型后）。
+
+### Z9 · 语音桥 agent 侧收尾（T4 无人工部分，分支 `fix/z9-voice-bridge`）
+
+- dsh-keeper-voice：keeper-tts 未启动/断网时的**优雅降级**（工具返回明确错误文案，不崩会话）——现状单测有降级路径，补「端点 404/超时/连接拒绝」三分支单测。
+- barge-in 第二层调研：读 dsh-voice-mode 0.7.34 事件面，公开打断钩子存在则接线（打断事件→`/v1/stop`），不存在则落决策记录「降级为手动停止工具」（写 `plugins/dsh-keeper-voice/docs/`）。
+- 8bit 情绪 tag 透传（keeper-tts 拓展区参数）——探测端点是否接受，不接受则记录跳过。
+- **不做**：真机打断闭环、唤醒词链路、字幕联动 hooks（全部要真人/真机，留 T4 原文档）。
+
+### Z10 · hub 退役第一批 + 回滚演练（T7，工作在**岸亭仓库**分支 `Shoreting:hub-slim`）
+
+- 翻 `retire.monitoring` 闸门（mini 监控、探针 CPU 上报）：岸亭仓库加测试 → 跑全量 → 协议对账脚本（`check_protocol`）确认 k20 app 无感。
+- 写回滚演练脚本：`retire.*` 翻回 false 一键恢复 0.9.0 行为，跑一遍留记录归档（岸亭 `docs/`）。
+- **第二批不动**（mijia/persona/companion 依赖 T3/T4 完工）；console 瘦身不做。
+- push 纪律：岸亭仓库（wxydejoy/Shoreting）**只本地 commit，不推**——推送授权没给过这个仓库，等漂泊者点头。
+- 今晚前情：直链后 hub 的 companion 语音面还在服役（dsh 网关代理回 hub），retire 时跳过 companion 相关路由，别把她的声音弄哑。
+
+### Z11 · 文档收口（本仓库，分支 `docs/z11-sync` 或直接 main 附证据）
+
+- T6-wechat.md 按 v2 口径收口：作废项（wcferry/wechaty PoC 等）标「作废（v2 决策 D-）」，现状一节写「入口由 dsh-plugin-weixin 承担，2026-11-04 21:21 全链路实证（见夜班计划进度区）」，状态改 done（桥本体交付+替代方案投产）。
+- T9-desk-tools.md：勾掉「真机验收」（21:21 微信真关台灯即控灯验收），验收标准补证据行；「拔 auth.json 降级」若单测已覆盖就引用测试名，不重测。
+- T7-hub-slimming.md 状态头 doing → review（hub-slim 三路由已迁 dock main 并实证，直链线上跑着）。
+- T8-integrate.md：install.sh 生态插件清单按 T1《替代决策清单》**钉版本填实**（占位符清掉）；README 快速开始写出 30 分钟装机流程草稿（演练装机本身留人工）。
+- refactor-map.md 状态列同步（今晚直链/companion 代理/微信实证三行补进去）。
+
+### Z12 · 定时任务登记（产物：`docs/tasks/scheduled-jobs.md`，本仓库）
+
+- 新建**定时任务登记文档**：每项一行，字段「频率 · 做什么 · 现状（自动化/手工/未跑）· 触发方式」。首批登记：
+  1. **实例健康检查**（每日）：:3090 /health、hub :17890 /health、keeper-tts :18100 探活，异常写 `~/.dsh/logs/` 摘要——可由 WorkBuddy automation 承担；
+  2. **微信 journal 巡查**（每日）：泄漏样本计数（`<weixin_` 字节串）是否归零、out 空串率——防中毒循环复发；
+  3. **retire 观察期巡查**（每周，Z10 之后生效）：闸门状态、k20 app 掉线横幅抽查；
+  4. **quota 巡查**（每日）：glm 配额（quota-watch 插件已有 idle 逻辑，登记去重）；
+  5. **launchd 常驻重试**（每次机器重启后人工窗口）：机器级 bootstrap 修复前不重试，登记占位。
+- 文档里每项标「可否转 WorkBuddy automation」；真 automation 由漂泊者点头后再建（建卡是环境级动作，不越权）。
+
+## 六、进度（逐项追加，格式：`Z# · 时间 · 谁 · 一行结论`）
 
 - 计划落档 · 2026-11-04 16:45 · 守岸人（Claw）· 六项排好（Z1 实例常驻 → Z2 路由实证 → Z3 工具面根因 → Z4 k20 六工具 → Z5 听书 → Z6 文档），红线与坑录入；开工前状态：:3090 停机等 Z1，其余各面健康
 - Z2b · 2026-11-04 17:40 · 守岸人（Claw）· **主动消息泄漏破案：不是「模型不行」一句话，是中毒循环**（种子=弱模型抄状态块；放大器=插件把泄漏回复不消毒写进「上次主动发的是」示例与最近消息历史；同模型在干净历史会话五连发全干净为证）。现场补丁已打 node_modules（sanitizeProactiveText，5 用例单测过含真实样本），固化成 pnpm patch 归 Z2b/zcode 待办
@@ -57,4 +114,6 @@
 - 直链T7 · 2026-11-04 20:20 · 守岸人（WorkBuddy）· **k20 已直连 dsh（直链物理成立）**：adb 改 datastore port 17890→3090（protobuf 外层 entry 长度前缀要同步改，第一次栽这致启动崩，已修），app ESTABLISHED 长轮询到 :3090、主屏正常无掉线横幅；备份在 /data/local/tmp/*.bak-17890。差异：media 乐观应答不真控播、companion 404（T3/T4 前别动 hub 的语音面）。剩：launchd 重启修复→常驻→观察→retire
 - 直链T7 · 2026-11-04 21:00 · 守岸人（WorkBuddy）· **语音失联修复：companion 面改代理回 hub**：漂泊者报语音不管用 → 两层根因（companion 404 by design + prefix 带尾斜杠宿主按段匹配子路径漏 fallback 405，obmc 先例不带斜杠）；修复后真机实证 chat/memory 经 dsh 网关全通（她回了话），media 卡片同修。坑：代理转发必须带 content-length（chunked hub 不认）。已合 main 推送 fe787f7。剩：其余 hub 端点（mirror/scenes/photos/weather/at-desk）未接、T3/T4 后撤代理
 - Z2/Z3 ✅ · 2026-11-04 21:25 · 守岸人（Claw）· **微信聊天全链路实证通过，Z3 自愈结案**：21:21 漂泊者微信「再试一下」→ desk_mi_light 真关台灯（米家回「台灯 已关闭」）→ 回「关了。」——微信→人格→glm-4.5-flash→工具→米家→物理设备端到端首次打通。要点：①工具注册表为空的问题随实例重启+新会话建立自愈（会话 request/header tools=109，无需动 agentPresets，Z3 降级为观察项）；②模型路由实证 glm-4.5-flash（turn 22+ header）；③米家写闸门 controlEnabled 已由漂泊者点头开闸（20:45，live profile 已注释）；④主动消息消毒补丁在跑的实例生效中（20:42 那轮主动消息已无脚手架泄漏）。残留：journal 里 out 偶发空串/工具记号直发（GLM 弱模型历史 turn），新 turn 未见；实例由终端手工起（直链线 46589），launchd 常驻仍待机器级 bootstrap 修复
-- 提速 · 2026-11-04 21:30 · 守岸人（Claw）· **微信回复延迟拆账（43s 太慢，漂泊者点名）**：21:20 turn 实测三段——模型步 12.5s（81KB prompt+109 工具，且 glm-4.5-flash 在输出 reasoning）+ 米家执行 ~11s（desk-mi→hub→米家云）+ 模型步 13.5s。已做：实测 zhipu 关思考省 ~7s/步（同 81KB prompt enabled 15.9s vs disabled 8.9s；带工具 7.1s vs 5.2s），把 `~/.dsh-tui/settings.json values.effortDefault=off` + `~/.dsh-tui/effort.json {"effort":"off"}` 双层钉死（zai 分支 thinking 由 reasoningEffort 决定，off→disabled），重启后待实测。**留给 zcode**：①81KB prompt 瘦身（技能目录+109 工具全量注入微信会话，微信用不上 agent-browser/sheetagent 这类；查 dsh 会话 cwd/skill 装载策略，实例现从 ~/dsh-shorekeeper 起）；②米家写 11s 拆账（hub /v1/mijia→云链路，看有无重试/轮询可省）；③若 effort 链对微信 turn 不生效（会话自带 config 的话），备选=pi-ai pnpm patch 把 zai thinking 焊死 disabled。注意：effort=off 是全局默认（TUI 会话也受影响，/effort 可临时调回）
+- 提速 · 2026-11-04 21:30 · 守岸人（Claw）· **微信回复延迟拆账（43s 太慢，漂泊者点名）**：21:20 turn 实测三段——模型步 12.5s（81KB prompt+109 工具，且 glm-4.5-flash 在输出 reasoning）+ 米家执行 ~11s（desk-mi→hub→米家云）+ 模型步 13.5s。已做：实测 zhipu 关思考省 ~7s/步（同 81KB prompt enabled 15.9s vs disabled 8.9s；带工具 7.1s vs 5.2s），把 `~/.dsh-tui/settings.json values.effortDefault=off` + `~/.dsh-tui/effort.json {"effort":"off"}` 双层钉死（zai 分支 thinking 由 reasoningEffort 决定，off→disabled），重启后待实测。**留给 zcode**：①81KB prompt 瘦身（技能目录+109 工具全量注入微信会话，微信用不上 agent-browser/sheetagent 这类；查 dsh 会话 cwd/skill 装载策略，实例现从 ~/dsh-shorekeeper 起）；②米家写 11s 拆账（hub /v1/mijia→云链路，看有无重试/轮询可省）。~~③若 effort 链对微信 turn 不生效，备选=pi-ai pnpm patch 把 zai thinking 焊死 disabled~~ **③已作废（21:45 漂泊者指令）**：微信聊天保留思考，禁止把 thinking disabled 焊到微信链路——提速只走 ①②。注意：effort=off 是全局默认（TUI 会话也受影响，/effort 可临时调回）
+- 思考拆面 · 2026-11-04 21:50 · 守岸人（WorkBuddy）· **漂泊者定调：安卓端控制不深度思考，微信聊天保留思考——已按面落实**。全链路查实（dsh-agent installModelSelection / dsh-llm-pi-ai resolveReasoningLevel / pi-ai zai 分支三处源码 + 会话 request/header 实测）：①微信 turn 走 weixin 插件 chat 路由，路由只带 provider/model 不带 effort，手声明模型 reasoning=false → 请求**不发 thinking 字段** → 智谱服务端默认开思考——**微信现在每轮都在思考，TUI 的 effort=off 从未管到它**（21:30 那条「off→disabled 待实测」对微信是空操作，已纠偏）；②安卓端 dock 会话走 agent-default-model（glm-4-flash-250414，非思考模型）——已在 cordis.patch.yml 显式钉 `reasoningEffort: off`（off 恒合法，换模型也不会忘关），重启生效；③pi-ai 的 isZai 覆盖 open.bigmodel.cn，zai 分支 `thinking:{type:enabled/disabled}` 按 effort 硬分派——将来若要给微信显式钉开/钉关，路子是 weixin 插件路由加 reasoningEffort 字段（installModelSelection 原生透传）+ 模型声明 reasoningEfforts，本班不做（现状=开，正合漂泊者指令）
+- 第二批排定 · 2026-11-04 22:20 · 守岸人（WorkBuddy）· **T1–T9 迁移收尾排成 Z7–Z12（全部无需人工干预）**：Z7 人格回归剧本 ≥20 条自动化（headless 断言：控制句不剧情化/称呼一致/零泄漏）、Z8 听书三工具（keeper-tts 直连+books-format §4 切句+断点续读，真机听感留人工）、Z9 语音桥 agent 侧（降级三分支单测+barge-in 钩子调研+决策记录）、Z10 hub 退役第一批 retire.monitoring+回滚演练（岸亭仓库本地 commit 不推，companion 路由跳过）、Z11 文档收口（T6 作废标定/T9 勾验收/T7 改 review/T8 清单钉版）、Z12 定时任务登记文档落 docs/tasks/scheduled-jobs.md（J1–J7，automation 待漂泊者点头再建）。人工项（熄屏/扫码/听感/装机演练）全部留在原 T 文档未排入
