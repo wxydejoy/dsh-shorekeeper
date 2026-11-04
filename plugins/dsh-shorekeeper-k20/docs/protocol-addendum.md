@@ -2,7 +2,7 @@
 
 > 状态：**网关已实装**（dock 仓库 `hub-slim` 8503d28：`dock_hub/screen_state.py` + 三路由 + `snapshot.caption/lock` + openapi/lan-protocol 同步，37/39 对账一致，1188 测全绿）。
 > 客户端实现：本插件 `src/gateway.ts`（含 mock：`test/mock-hub.ts`）。
-> 剩余：安卓侧消费（caption 渲染、lock 执行）与真机联调：⏸。`/v1/phone/layout` 零安卓改动，hub-slim 部署后即全通。
+> lock 执行：安卓端已实现（dock/Shoreting c7f581f：snapshot.lock 解析 + requested_at 记账去重 + ScreenCommand.LockNow→lockNow），APK 待随下一版上屏；caption 渲染仍 ⏸（T4 钩子一起做）。`/v1/phone/layout` 零安卓改动，hub-slim 部署后即全通。
 
 ## 背景
 
