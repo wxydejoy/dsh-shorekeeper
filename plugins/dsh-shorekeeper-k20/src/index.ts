@@ -50,8 +50,17 @@ export function apply(ctx: Context, config: K20Config): void {
     return
   }
   const gatewayState = new K20Gateway(config.serverName ?? 'study')
-  registerK20Server({ ctx, webServer, config: { token: config.token, serverName: config.serverName ?? 'study' }, gateway: gatewayState })
-  ctx.logger('k20').info('k20 网关已挂上宿主 webServer（/health /v1/snapshot /v1/caption /v1/phone/layout /v1/lock /v1/devices/*）')
+  registerK20Server({
+    ctx,
+    webServer,
+    config: {
+      token: config.token,
+      serverName: config.serverName ?? 'study',
+      companionUpstream: config.companionUpstream ?? 'http://127.0.0.1:17890',
+    },
+    gateway: gatewayState,
+  })
+  ctx.logger('k20').info('k20 网关已挂上宿主 webServer（/health /v1/snapshot /v1/caption /v1/phone/layout /v1/lock /v1/devices/* /v1/companion/*→代理）')
 }
 
 interface WebServerLike {

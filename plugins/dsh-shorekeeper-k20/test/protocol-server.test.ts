@@ -3,6 +3,8 @@
  */
 
 import { EventEmitter } from 'node:events'
+import { createServer as createHttpServer } from 'node:http'
+import type { AddressInfo } from 'node:net'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { K20Gateway, registerK20Server } from '../src/server.ts'
@@ -95,7 +97,7 @@ describe('k20 网关服务端', () => {
     registerK20Server({
       ctx: { effect: (fn: () => void) => fn() } as never,
       webServer: web,
-      config: { token: TOKEN, serverName: 'study' },
+      config: { token: TOKEN, serverName: 'study', companionUpstream: '' },
       gateway,
     })
   })
@@ -186,10 +188,70 @@ describe('k20 网关服务端', () => {
     expect(unknown.status).toBe(404)
   })
 
-  it('companion 面：整面 404（companion_disabled）', async () => {
+  it('companion 面：upstream 为空时整面 404（companion_disabled）', async () => {
     const res = await web.dispatch('POST', '/v1/companion/chat', { text: '在吗' }, authHeaders())
     expect(res.status).toBe(404)
     expect((res.body as { error?: { code?: string } }).error?.code).toBe('companion_disabled')
+  })
+
+  it('companion 面：upstream 在位时原样代理（method/authorization/body/路径/响应流）', async () => {
+    // 真上游：回显收到的东西
+    const upstream = createHttpServer((ureq, ures) => {
+      let body = ''
+      ureq.on('data', (c: Buffer) => {
+        body += c.toString()
+      })
+      ureq.on('end', () => {
+        ures.writeHead(200, { 'content-type': 'application/json' })
+        ures.end(JSON.stringify({ method: ureq.method, path: ureq.url, auth: ureq.headers.authorization ?? null, body }))
+      })
+    })
+    await new Promise<void>((r) => upstream.listen(0, '127.0.0.1', r))
+    const upPort = (upstream.address() as AddressInfo).port
+
+    // 宿主壳：真实 http server，用 mock webServer 的路由表调 handler（真 req/res）
+    const hostWeb = createMockWebServer()
+    registerK20Server({
+      ctx: { effect: (fn: () => void) => fn() } as never,
+      webServer: hostWeb,
+      config: { token: TOKEN, serverName: 'study', companionUpstream: `http://127.0.0.1:${upPort}` },
+      gateway: new K20Gateway('study'),
+    })
+    const host = createHttpServer((hreq, hres) => {
+      const route = hostWeb.find(hreq.method ?? 'GET', hreq.url ?? '/')
+      if (!route) {
+        hres.statusCode = 404
+        hres.end()
+        return
+      }
+      void route.handler(hreq as IncomingMessage, hres as ServerResponse)
+    })
+    await new Promise<void>((r) => host.listen(0, '127.0.0.1', r))
+    const hPort = (host.address() as AddressInfo).port
+
+    try {
+      const res = await fetch(`http://127.0.0.1:${hPort}/v1/companion/chat`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ text: '在吗' }),
+      })
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as { method: string; path: string; auth: string | null; body: string }
+      expect(body.method).toBe('POST')
+      expect(body.path).toBe('/v1/companion/chat')
+      expect(body.auth).toBe(`Bearer ${TOKEN}`)
+      expect(JSON.parse(body.body)).toEqual({ text: '在吗' })
+    } finally {
+      upstream.close()
+      host.close()
+    }
+  })
+
+  it('devices prefix 注册不带尾斜杠（宿主按段匹配的坑）', () => {
+    const devices = web.routes.find((r) => r.path.startsWith('/v1/devices'))
+    const companion = web.routes.find((r) => r.path.startsWith('/v1/companion'))
+    expect(devices?.path).toBe('/v1/devices')
+    expect(companion?.path).toBe('/v1/companion')
   })
 
   it('长轮询：since=当前 seq 时挂住，bump 后立刻醒；不带 since 立即返回', async () => {
