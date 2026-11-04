@@ -1,7 +1,7 @@
 # T7 · Hub 瘦身与退役
 
 ```
-状态: review（hub-slim 三路由已迁 dock main 并真机实证；k20 已直连 dsh:3090、companion 面由网关代理回 hub 服役中；retire 闸门机制已落地未翻批——三批退役与回滚演练待 Z10 起步 · 2026-11-04） · owner: 值班 agent · 预估: 8–12 agent 小时 · 前置: T2–T6 全部完成
+状态: review（hub-slim 已随 0d422c1 摘入 dock main 在跑；**第一批 retire.monitoring 已翻（2026-11-05 Z10，回滚演练过）**；k20 已直连 dsh:3090、companion 面由网关代理回 hub 服役中；二批 mijia/persona/companion 依赖 T3/T4 完工 · 2026-11-05） · owner: 值班 agent · 预估: 8–12 agent 小时 · 前置: T2–T6 全部完成
 分支: T7-hub-slimming    （工作在岸亭仓库，分支 Shoreting:hub-slim）
 ```
 
@@ -22,7 +22,7 @@ dsh 接管大脑后，hub 的大部分职责已被替代（见 refactor-map.md�
 
 ### 阶段二：分批退役（4–6h）
 - [x] 每批退役 = hub.yaml 加 feature flag（默认关新开旧）→ 观察一周 → 翻转默认 → 删码（机制落地：`hub/dock_hub/retire.py` 五组闸门 `retire:` 默认全 False = 0.9.0 行为；分派层 404 `retired`；翻转即回滚；11 条单测 + 真身 venv 冒烟导入 + check_protocol 对账不漂移）
-- [ ] 第一批：mini 监控、探针 CPU 上报（⏸ dsh-vitals 真机验收后翻 `retire.monitoring`）
+- [x] 第一批：mini 监控、探针 CPU 上报（✅ 2026-11-05 Z10 翻 `retire.monitoring: true`——三条路由仓库内零调用方实证（探针直发 mini 不进 hub）；真机验证 /metrics|telemetry|power 404 retired、snapshot/health/companion 200 不受影响；回滚演练过（见岸亭 docs/t7-rollback-drill-2026-11-05.md））
 - [ ] 第二批：mijia_bridge/mijia_catalog（⏸ `retire.mijia`）、persona/companion_flow（⏸ `retire.companion`）、media
 - [ ] 第三批：setup_ui、features、server.py 冗余路由（⏸ 待一、二批观察期结束）
 - [ ] console 菜单栏瘦身为三件套启停器（⏸）
@@ -30,7 +30,7 @@ dsh 接管大脑后，hub 的大部分职责已被替代（见 refactor-map.md�
 
 ### 阶段三：回滚演练（2h）
 - [ ] 模拟「dsh 出问题」，feature flag 一键切回 0.9.0 行为，全功能剧本通过（⏸ 真机；机制上 retire 组翻回 false 即恢复，协议对账脚本把着关）
-- [ ] 回滚演练记录归档（⏸）
+- [x] 回滚演练记录归档（✅ 岸亭 `docs/t7-rollback-drill-2026-11-05.md`：false→/metrics 200 恢复、true→404 退役两向实证；脚本 `docs/t7-rollback-drill.sh` 入库）
 
 ## 交付物
 - 岸亭仓库：瘦身 PR + feature flag 机制
@@ -58,3 +58,9 @@ dsh 接管大脑后，hub 的大部分职责已被替代（见 refactor-map.md�
 - **回滚开关机制**（`hub/dock_hub/retire.py` + `HubConfig.retire` + server.py 分派层接线）：五组路由闸门（mijia/companion/music/calendar_diary/monitoring），**默认全 False = 0.9.0 行为不动**；未知组名/非 bool 直接 ValueError（typo 防护）；`/v1/snapshot` 与 `/health` 永不退役（有单测钉死）；404 响应带回滚提示；模块退役标记集中在 `RETIRE_CANDIDATE_MODULES` 常量（不逐文件撒注释）。
 - **验证**：`test_retire.py` 11/11；dock/hub/.venv 真身解释器 `import dock_hub.server` OK；`scripts/check_protocol.py` 对账「没有漂移」（34 代码/36 文档，路由面未变）；hub.yaml.example 已带 retire 注释段。
 - ⏸ 待真机：各批翻转（先立后破：dsh-mihome/vitals/music 件验收 → 观察 → 翻开关 → 改 openapi → 观察一周 → 删码）、回滚演练、console 菜单栏瘦身。
+
+### 2026-11-05 · zcode · Z10 第一批退役翻转 + 回滚演练（岸亭分支 hub-slim，本地 commit 不推）
+- **部署状态澄清**：retire 机制早已随 0d422c1（W8 摘入）在 dock main 运行——hub-slim 分支是平行线无需部署；本批在其上加的 endpoint 级测试（monitoring 翻 true 三路由真 HTTP 404、snapshot/health 不受影响，14/14 绿）与演练记录落分支，待下次摘入。
+- **翻转**：`~/.config/dock-hub/hub.yaml` `retire.monitoring: true` + kickstart——/metrics、/v1/telemetry、/v1/power 404 retired；/v1/snapshot 200、/v1/companion/memory 200（她的语音面无恙）；k20 屏走 dsh 直链与 hub monitoring 面无关联。
+- **回滚演练**：false→/metrics 200（0.9.0 行为一键恢复）→true→404（退役态）两向实证，秒级重启窗口；脚本入库。
+- mini 整件退役（launchd 卸载 :17891）与探针 side 随观察期处理，不在本批。
