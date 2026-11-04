@@ -3,7 +3,8 @@
  * 在 DSH 宿主的 webServer 上把 lan-protocol v1 服务化，让 k20 app 可以直连 dsh：
  * 现役面六张——/health（免鉴权）、/v1/snapshot（Bearer + 长轮询）、/v1/caption、
  * /v1/phone/layout、/v1/lock、/v1/devices/{id}/command（media 乐观应答，其余 404）。
- * companion 一类按协议「可关」语义整面 404（她的大脑 T3/T4 后才归这条路）。
+ * companion 面代理到 companionUpstream（默认旧 hub：她的语音链 T3/T4 前还长在那边），
+ * 置空则按协议「可关」语义整面 404。
  *
  * 注册方式对齐 dsh-obmc-web 的先例：`inject ['webServer']` 的宿主里
  * `webServer.register({kind: 'exact'|'prefix', path, handler})`，handler 是
@@ -19,6 +20,7 @@
  */
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { request as httpRequest } from 'node:http'
 import type { Context, Disposable } from '@deepseek-ai/cordis'
 import type { CaptionState, LockState, MediaState, PhoneLayout, PhoneModulePatch, Snapshot } from './types.ts'
 
@@ -247,7 +249,7 @@ export interface K20ServerDeps {
   webServer: {
     register(route: { kind: 'exact' | 'prefix'; path: string; handler: (req: IncomingMessage, res: ServerResponse) => unknown }): Disposable
   }
-  config: { token: string; serverName: string }
+  config: { token: string; serverName: string; companionUpstream: string }
   gateway: K20Gateway
 }
 
@@ -408,10 +410,11 @@ export function registerK20Server(deps: K20ServerDeps): void {
   )
 
   // —— /v1/devices/{id}/command：media 乐观应答；其余设备 id 未接 → 404 ——
+  // ⚠️ prefix path 不带尾斜杠（宿主按段匹配，带 '/' 时子路径匹配不上，obmc 先例亦如此）
   register(
     {
       kind: 'prefix',
-      path: '/v1/devices/',
+      path: '/v1/devices',
       handler: guarded(async (req, res) => {
         const path = (req.url ?? '').split('?')[0] ?? ''
         const match = /^\/v1\/devices\/([^/]+)\/command\/?$/.exec(path)
@@ -436,15 +439,71 @@ export function registerK20Server(deps: K20ServerDeps): void {
     'k20 网关 /v1/devices/*',
   )
 
-  // —— /v1/companion/*：整面 404（协议「companion 可关」语义；T3/T4 后由 dsh 接管）——
+  // —— /v1/companion/*：代理到伴侣大脑（默认旧 hub）——
+  // 她的语音链（chat/stop/announce/memory/audio）T3/T4 之前还长在 hub 上：
+  // 网关把整个 companion 面原样转发（Authorization 同一枚 token），流式回传
+  // （audio 是 wav 字节流）。companionUpstream 置空则回到「可关」404 语义。
+  // ⚠️ prefix path 不带尾斜杠（同 devices）。
   register(
     {
       kind: 'prefix',
-      path: '/v1/companion/',
-      handler: guarded(async (_req, res) => {
-        sendError(res, 404, 'companion_disabled', '伴侣面未接入网关（她的大脑还不在这条路上）')
+      path: '/v1/companion',
+      handler: guarded(async (req, res) => {
+        const upstream = config.companionUpstream.trim()
+        if (upstream === '') {
+          sendError(res, 404, 'companion_disabled', '伴侣面未接入网关（companionUpstream 未配置）')
+          return
+        }
+        proxyRequest(req, res, upstream, ctx, 'companion')
       }),
     },
-    'k20 网关 /v1/companion/*（404 面）',
+    'k20 网关 /v1/companion/*（代理伴侣面）',
   )
+}
+
+/** 把请求原样转发到 upstream（保留 method/Authorization/content-type，流式回传响应） */
+function proxyRequest(
+  req: IncomingMessage,
+  res: ServerResponse,
+  upstream: string,
+  ctx: Context,
+  label: string,
+): void {
+  let target: URL
+  try {
+    target = new URL(upstream)
+  } catch {
+    sendError(res, 500, 'bad_upstream', `companionUpstream 不是合法 URL：${upstream}`)
+    return
+  }
+  const headers: Record<string, string> = {}
+  for (const name of ['authorization', 'content-type', 'content-length', 'accept'] as const) {
+    // content-length 必须带上：丢了会变 chunked，hub 的 BaseHTTPRequestHandler 不认，读到 0 字节
+    const value = req.headers[name]
+    if (typeof value === 'string') headers[name] = value
+  }
+  const upstreamReq = httpRequest(
+    {
+      protocol: target.protocol,
+      hostname: target.hostname,
+      port: target.port,
+      method: req.method,
+      path: req.url ?? '/',
+      headers,
+    },
+    (upstreamRes) => {
+      if (res.headersSent) {
+        upstreamRes.destroy()
+        return
+      }
+      res.writeHead(upstreamRes.statusCode ?? 502, upstreamRes.headers)
+      upstreamRes.pipe(res)
+    },
+  )
+  upstreamReq.on('error', (error) => {
+    ctx.logger?.('k20')?.warn?.(`[k20 网关] ${label} upstream 失败：%s`, error instanceof Error ? error.message : String(error))
+    if (!res.headersSent) sendError(res, 502, 'upstream_error', `${label} 上游不可达（${target.host}）`)
+    else res.destroy()
+  })
+  req.pipe(upstreamReq)
 }

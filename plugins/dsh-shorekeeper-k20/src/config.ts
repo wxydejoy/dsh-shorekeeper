@@ -21,6 +21,8 @@ export interface K20Config {
   serve?: boolean
   /** /health 上报的名字（安卓设置页展示；与旧 hub 的房间名对齐） */
   serverName?: string
+  /** companion 面上游（她的语音链 T3/T4 前在旧 hub）；置空则 companion 整面 404 */
+  companionUpstream?: string
 }
 
 export const Config = Schema.object({
@@ -33,6 +35,7 @@ export const Config = Schema.object({
   lockEnabled: Schema.boolean().description('允许熄屏（高危；关闭时 k20.lock 直接拒绝）').default(false),
   serve: Schema.boolean().description('在本实例 webServer 上开 k20 网关路由（T7 直链；需要宿主有 webServer）').default(false),
   serverName: Schema.string().description('/health 上报的名字（安卓设置页展示）').default('study'),
+  companionUpstream: Schema.string().description('companion 面的上游（她的语音链 T3/T4 前在旧 hub）；置空则整面 404').default('http://127.0.0.1:17890'),
 })
 
 export function hubBaseUrl(config: K20Config): string {
