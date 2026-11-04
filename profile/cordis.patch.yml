@@ -4,9 +4,10 @@
 
 plugins:
   dsh-shorekeeper-k20:
-    host: http://k20.lan          # ⏸ 真机填实际地址
+    host: http://k20.lan          # k20 安卓端（背景面 BackgroundServer）
+    hubHost: http://127.0.0.1     # Hub 瘦身地址（W6 实机：Hub 在 Mac 本机，与 k20 不同机；缺省回落 host）
     port: 17890
-    token: change-me-to-a-long-random-string
+    token: change-me-to-a-long-random-string   # ⏸ 真机填实际值（k20 设置页与 hub.yaml 同源）
     backgroundPort: 17920
     captionScale: 100
     lockEnabled: false            # 高危；明确要用再开
