@@ -1,7 +1,7 @@
 # T3 · 守岸人人格工程 —— 角色卡 + 世界书 + skill
 
 ```
-状态: review（阶段一/二完工已合 main；27 条全量跑批与 web 端调优待续） · owner: 值班 agent（ZCode，T1 会话）· 预估: 12–18 agent 小时 · 前置: T1（tavern 选型）
+状态: review（阶段一/二完工已合 main；Z7 回归自动化落地：headless 26/27 条可跑全绿+改卡三处；web 端纪律条款/多轮/真工具层仍待人工跑批） · owner: 值班 agent（ZCode，T1 会话）· 预估: 12–18 agent 小时 · 前置: T1（tavern 选型）
 分支: T3-persona-card    （可与 T2 并行）
 ```
 
@@ -72,3 +72,10 @@ persona.py / companion_flow.py / intents.py / companion_desk.py 的灵魂全部�
 6. **T4 决策回填**——「tavern 件与 voice-mode 冲突」风险行更新为叠装分工事实 + 共装 ERESOLVE 信号（voice-mode@0.7.34 拖 0.2.0-rc.2 旧内部，装包实测）。
 7. 未动：目标、交付物、验收标准、预估（12–18h 对照 T2/T4/T5 实测吞吐合理）。
 - 2026-11-04（W3 对齐）：分支 T3-persona-card 已合入 main（967acb7）；人工项＝人格全量校准；微信侧人格已先以 weixin 自定义模式承载（W4a），tavern 全量卡待 B4 解冻。
+
+### 2026-11-05 · zcode · Z7 回归自动化（分支 fix/z7-persona-regression）
+- **执行器**：`scripts/persona-regression.mjs`——headless 一枪逐条喂，三类断言（control 不剧情化 / persona 称呼声线 / leak 零脚手架）+ 全局红线（无感叹号、无 `<weixin_`、无工具记号）。剧本机器可读版：`content/shorekeeper-card/regression/scenarios.json`（27 条=REGRESSION.md 镜像 + Z7 补充 6 条；打断连发两条为 web 专属）。
+- **关键破解**：headless 的 persona 注入点是 `system-prompt.personaPrefix`（--dump-config 实证）——hl/T3 时代的 `- id: persona` 覆盖**从未生效**（目标行不存在，id 覆盖静默无效），此前 headless 的人格响应是模型裸即兴。执行器直接从仓库 `character.json`+`worldbook.json` **程序化合成 tavern 等价注入**（常驻条款全量+关键词触发按条命中，JSON 形态 YAML 避开 T3 的缩进坑；{{char}}/{{user}} 展开为实名）——回归测的是卡与书的当前真身，改卡下一轮立即生效。
+- **回归 profile**：`shorekeeper-reg`（headless 模板 + zhipu glm-4.5-flash 生产同路由 + desk-mi/glass-weather/tavern；tavern 2.7.26/2.7.27 均因 headless 无 webServer 而 pending——卡注入由执行器承担，插件面板层仍归 web）。
+- **全量结果**：headless 可跑 26 条全绿（跳过 1 条 web 专属）。过程发现并修复：断言 3 处伪失败（多行回复 `.` 不过行、中文数字钟点、断言对打包语义的误解）；glm-4.5-flash 两处真实漂移已按「改卡不改剧本」收口——①求夸场景进了夸赞模式 → 卡补「你说件事，我照着写」示例；②烦躁场景客服式共情 → 世界书情绪条款补「不说我了解你/令人沮丧这类客服话」；③连问两句 → 问句预算补「问号至多一个」。B6/E23/F24 各遇一次 glm 瞬时抽风（思考原文当回复/进程失败），重试即过——与 21:25 journal 观察的「GLM 弱模型偶发泄漏」同源，J2 巡查盯。
+- **headless 边界（如实）**：tavern 面板层（世界书 token 预算触发、示例对话 few-shot 的精确注入格式）、feiyu 记忆注入、多轮会话（打断剧本 Z7x1）不在 headless 覆盖内，归 web 端人工跑批；E19 在 headless 无记忆工具时模型会诚实说明记不住（生产有 feiyu 不受影响）。
