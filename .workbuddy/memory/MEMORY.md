@@ -31,3 +31,4 @@
 - **hub 第一批退役已生效**：`retire.monitoring: true` 在 ~/.config/dock-hub/hub.yaml（/metrics|telemetry|power 404；snapshot/health/companion 不受影响）；回滚=翻 false+kickstart（脚本：岸亭 docs/t7-rollback-drill.sh）。retire 机制在 dock main 已跑（0d422c1 摘入），hub-slim 分支是平行线。
 - **岸亭 push 授权仍只限 dsh-shorekeeper 仓库**；dsh-plugin-weixin 上游今天发了 1.5.x（1.4.3 不含消毒逻辑）——升级与否等漂泊者点头，升级则两个 patch 都要重做。
 - **驱动生产实例会话的口子 = console API**：POST `:3090/api/dsh-console/cmd`（Bearer 用 ~/.dsh/dsh-console-token.json 的 token；body `{op, payload:{...}}`）。op：create（cwd）/send（sessionId+text，走 ctl.prompt 真会话轮）/detail（sessionId，返回 turns 含逐 turn tools 调用记录）/sessions/cancel 等。不用等微信消息就能在生产实例上验证 agent 级行为（Z4 实证）。
+- **:3090 web profile 没有 dsh-tavern**——浏览器/TUI 会话是默认 assistant 前缀+全量工具（无人格）；现役人格只在微信侧（weixin 自定义模式）。B4（tavern 上 web profile）阻碍已清（IAB 冻结场景随 lab 删除不复存在+外部 Chromium 渲染正常），装件+声明预设即可做，会改全部浏览器会话行为，等漂泊者点头。web 会话驱动同 console API（op:create/send/detail，send 支持 busyMode:'steer' 注入运行中的 turn=打断模拟）。
