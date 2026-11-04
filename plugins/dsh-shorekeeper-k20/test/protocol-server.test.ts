@@ -254,6 +254,24 @@ describe('k20 网关服务端', () => {
     expect(companion?.path).toBe('/v1/companion')
   })
 
+  it('companion 代理在位时快照带 companion.ready=true（app 语音门）；置空时不带', async () => {
+    // 默认注册 upstream 为空 → 不带
+    let snap = (await web.dispatch('GET', '/v1/snapshot', undefined, authHeaders())).body as Record<string, unknown>
+    expect(snap).not.toHaveProperty('companion')
+
+    // upstream 在位 → ready
+    const web2 = createMockWebServer()
+    const gateway2 = new K20Gateway('study')
+    registerK20Server({
+      ctx: { effect: (fn: () => void) => fn() } as never,
+      webServer: web2,
+      config: { token: TOKEN, serverName: 'study', companionUpstream: 'http://127.0.0.1:17890' },
+      gateway: gateway2,
+    })
+    snap = (await web2.dispatch('GET', '/v1/snapshot', undefined, authHeaders())).body as Record<string, unknown>
+    expect(snap.companion).toMatchObject({ ready: true, voice: true })
+  })
+
   it('长轮询：since=当前 seq 时挂住，bump 后立刻醒；不带 since 立即返回', async () => {
     const pending = web.dispatch('GET', '/v1/snapshot?since=0&wait=5', undefined, authHeaders())
     let settled = false

@@ -22,7 +22,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { request as httpRequest } from 'node:http'
 import type { Context, Disposable } from '@deepseek-ai/cordis'
-import type { CaptionState, LockState, MediaState, PhoneLayout, PhoneModulePatch, Snapshot } from './types.ts'
+import type { CaptionState, CompanionState, LockState, MediaState, PhoneLayout, PhoneModulePatch, Snapshot } from './types.ts'
 
 /** 协议错误形状：4xx/5xx 一律 {error: {code, message}}（lan-protocol §7） */
 interface HubErrorBody {
@@ -98,6 +98,7 @@ export class K20Gateway {
   private lock: LockState | null = null
   private media: MediaState | null = null
   private layout: PhoneLayout | null = null
+  private companion: CompanionState | null = null
 
   private readonly hubName: string
 
@@ -217,6 +218,11 @@ export class K20Gateway {
     })
   }
 
+  /** companion 面可用性（app 的语音门：snapshot.companion.ready 才把话送进 chat） */
+  setCompanion(state: CompanionState | null): void {
+    this.companion = state
+  }
+
   /** 组 snapshot：协议最小集（未接的面整个省略；phone 只在写过布局后带） */
   snapshot(): Snapshot {
     const snap: Snapshot = {
@@ -239,6 +245,7 @@ export class K20Gateway {
     }
     if (this.caption !== null) snap.caption = this.caption
     if (this.lock !== null) snap.lock = this.lock
+    if (this.companion !== null) snap.companion = this.companion
     return snap
   }
 }
@@ -257,6 +264,12 @@ export interface K20ServerDeps {
 export function registerK20Server(deps: K20ServerDeps): void {
   const { ctx, webServer, config, gateway } = deps
   const token = config.token
+
+  // companion 面可用（代理在位）→ 快照带 ready=true，app 的语音门才开；
+  // 置空 upstream 时保持 404 语义，快照不带 companion，语音照旧被 app 拦下。
+  if (config.companionUpstream.trim() !== '') {
+    gateway.setCompanion({ ready: true, voice: true, speaking: false, timer: null })
+  }
 
   const register = (route: Parameters<typeof webServer.register>[0], label: string): void => {
     try {
