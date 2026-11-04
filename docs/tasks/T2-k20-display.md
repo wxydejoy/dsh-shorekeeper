@@ -78,4 +78,4 @@ k20 只当「显示屏 + 麦克风」外设，大脑在 dsh。协议见 `referen
 - **插件改动（本分支）**：config 加可选 `hubHost`（缺省回落 host）——Hub 在 Mac、背景面在 k20，一个 `host` 罩不住两台机器；typecheck 零错，测试 28/28（新增 test/config.test.ts 4 条）。live profile（~/.dsh/profiles/web/cordis.patch.yml）已写真值：host http://k20.lan / hubHost http://127.0.0.1 / 真 token。
 - **Hub 重启**：正在跑的 hub 进程是旧代码（/v1/caption 404），`launchctl kickstart cn.weiekko.dock-hub` 后吃进 W8 迁移的三条增补路由。
 - **六面实证（curl 层，等价于六工具的底层调用）**：k20_snapshot ✅ GET /v1/snapshot 真数据（seq 46588）· k20_caption ✅ text 推送+clear 双 ok（字幕真上屏）· k20_layout ✅ /v1/phone/layout 净零回写（读 app datastore 原值 POST，phone 端 datastore 复核收到且数值一致）· k20_media ✅ toggle×2 净零（playing true→false）· k20_lock ⚠️ 路由 ok 但屏未真熄（mWakefulness=Awake）——lockEnabled 仍 false，真熄屏待漂泊者点头开闸再验 · k20_wallpaper ✅ 背景面 login 200 + /api/backgrounds 真清单 + /api/layout 读；上传项不动（避免碰现有背景）。
-- 剩余：:3090 重载配置后 agent 工具面（k20_* 六件）真实调用走一遍，即 W6 全清。
+- 剩余：~~:3090 重载配置后 agent 工具面（k20_* 六件）真实调用走一遍~~ ✅ **2026-11-05 Z4 本体完成（agent 级五发五中，W6 全清）**——console API 驱动真会话：k20_snapshot 真数据 / caption 推送+清除（屏上可观察可逆）/ layout 读+原样回写 / media toggle×2 净零 / lock 只验注册未调用（红线）；逐 turn tools 记录在会话 session-1e7df65a（证据见夜班计划 Z4 行）。
