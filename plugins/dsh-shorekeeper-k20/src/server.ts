@@ -11,7 +11,9 @@
  * Node 原生 (req, res)。宿主没有 webServer（tui profile 等）时安静跳过。
  *
  * 设计取舍（真机校准点 ⏸）：
- * - snapshot 只发协议要求的最小集：未接的面（temperature/pc/companion/photos…）整个省略；
+ * - snapshot 只发协议要求的最小集：未接的面（temperature/companion/photos…）整个省略；
+ *   pc 是唯一例外——app 的熄屏判定靠 pc.online，缺字段会被读成「还没数据=保持醒着」
+ *   （2026-11-05 熄屏回归实证），所以 pc 永远给出，订阅断/过期时退 online:false；
  * - `phone` 只在写过 /v1/phone/layout 后才带上（phone.rev 恒 0；带默认外观有把
  *   真机本地设置打回出厂的风险，等 W6 真机确认 app 的 rev 语义后再放开）；
  * - media 没有真实源，只做命令乐观应答（协议明文允许「可用上次命令的乐观值」）；
@@ -22,7 +24,11 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { request as httpRequest } from 'node:http'
 import type { Context, Disposable } from '@deepseek-ai/cordis'
-import type { CaptionState, CompanionState, LockState, MediaState, PhoneLayout, PhoneModulePatch, Snapshot } from './types.ts'
+import type { CaptionState, CompanionState, LockState, MediaState, PcState, PhoneLayout, PhoneModulePatch, Snapshot } from './types.ts'
+
+/** pc 样本的有效期：真 hub 的探针 stale_ms 是 12s，这里放宽到 60s——
+ *  长轮询本身 25s 一轮，太紧会把正常的轮询间隔误判成探针断线。 */
+const PC_STALE_MS = 60_000
 
 /** 协议错误形状：4xx/5xx 一律 {error: {code, message}}（lan-protocol §7） */
 interface HubErrorBody {
@@ -99,6 +105,8 @@ export class K20Gateway {
   private media: MediaState | null = null
   private layout: PhoneLayout | null = null
   private companion: CompanionState | null = null
+  private pc: PcState | null = null
+  private pcAt = 0
 
   private readonly hubName: string
 
@@ -223,13 +231,33 @@ export class K20Gateway {
     this.companion = state
   }
 
-  /** 组 snapshot：协议最小集（未接的面整个省略；phone 只在写过布局后带） */
+  /** 喂 pc（来自真 hub 的 snapshot 订阅，index.ts 接线）。内容变了才 bump，
+   *  免得每个轮询周期都惊动一遍长轮询等待者。 */
+  setPc(state: PcState | null): void {
+    this.pcAt = state === null ? 0 : Date.now()
+    const prev = this.pc
+    this.pc = state
+    if (JSON.stringify(prev) !== JSON.stringify(state)) this.bump()
+  }
+
+  /** pc 对 app 的语义必须完整：缺 pc = 「还没数据 = 保持醒着」（DockViewModel
+   *  noteDeskPc 的分支），熄屏链路会断——所以这里永远给出 pc。
+   *  真样本过期（PC_STALE_MS）或从未有过 → online:false，对齐真 hub 的
+   *  「探针过期即离线」语义（hub 侧 stale_ms 12s）。 */
+  private pcState(): PcState {
+    if (this.pc !== null && Date.now() - this.pcAt <= PC_STALE_MS) return this.pc
+    return { online: false, updated_at: this.pc?.updated_at ?? '' }
+  }
+
+  /** 组 snapshot：协议最小集（未接的面整个省略；phone 只在写过布局后带）。
+   *  pc 是例外：永远给出（缺了 app 读成醒着，见 pcState 注释）。 */
   snapshot(): Snapshot {
     const snap: Snapshot = {
       protocol: 1,
       seq: this.seq,
       hub: { name: this.hubName, mijia: 'ok', message: null },
       temperature: null,
+      pc: this.pcState(),
       devices: [],
       media: this.media,
     }

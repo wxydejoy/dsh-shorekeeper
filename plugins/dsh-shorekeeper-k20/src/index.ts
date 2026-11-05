@@ -27,13 +27,20 @@ export function apply(ctx: Context, config: K20Config): void {
     ctx.tools.register(tool)
   }
 
+  // 直链服务面（serve=true）建立后，真 hub 的 pc 状态从这里喂给模拟面——
+  // app 的熄屏判定靠 pc.online（「只看 Windows 探针的 pc.online」），模拟面缺了
+  // 这个字段屏就永远不会睡（2026-11-05 熄屏回归实证）。serve=false 时它无事可做。
+  let face: K20Gateway | null = null
+
   // 长轮询订阅：维持与网关的连接并跟踪 seq，供 T3/T4 后续接入唤醒/打断事件。
   // TODO(T1 真机校准)：cordis 分支的 Events 没有 dispose 事件，卸载时的 watcher 停止
   // 接线待对照真实宿主生命周期 API 补上；此前插件重载会多挂一个轮询循环。
   const watcher = new SnapshotWatcher({
     client: hub,
     waitSec: 25,
-    onSnapshot: () => {},
+    onSnapshot: (snapshot) => {
+      face?.setPc(snapshot.pc ?? null)
+    },
     onError: (error) => {
       ctx.logger('k20').warn('长轮询断开，将自动重连：%s', error instanceof Error ? error.message : String(error))
     },
@@ -49,7 +56,8 @@ export function apply(ctx: Context, config: K20Config): void {
     ctx.logger('k20').warn('serve=true 但宿主没有 webServer 服务，网关路由未注册')
     return
   }
-  const gatewayState = new K20Gateway(config.serverName ?? 'study')
+  const faceState = new K20Gateway(config.serverName ?? 'study')
+  face = faceState
   registerK20Server({
     ctx,
     webServer,
@@ -58,7 +66,7 @@ export function apply(ctx: Context, config: K20Config): void {
       serverName: config.serverName ?? 'study',
       companionUpstream: config.companionUpstream ?? 'http://127.0.0.1:17890',
     },
-    gateway: gatewayState,
+    gateway: faceState,
   })
   ctx.logger('k20').info('k20 网关已挂上宿主 webServer（/health /v1/snapshot /v1/caption /v1/phone/layout /v1/lock /v1/devices/* /v1/companion/*→代理）')
 }

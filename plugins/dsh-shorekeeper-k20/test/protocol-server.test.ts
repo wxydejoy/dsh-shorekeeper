@@ -119,7 +119,7 @@ describe('k20 网关服务端', () => {
     expect(badAuth.status).toBe(401)
   })
 
-  it('/v1/snapshot：最小集形状，未接的面整个省略', async () => {
+  it('/v1/snapshot：最小集形状，未接的面整个省略；pc 例外永远给出', async () => {
     const res = await web.dispatch('GET', '/v1/snapshot', undefined, authHeaders())
     expect(res.status).toBe(200)
     const snap = res.body as Record<string, unknown>
@@ -129,9 +129,28 @@ describe('k20 网关服务端', () => {
     expect(snap.devices).toEqual([])
     expect(snap.media).toBeNull()
     expect(snap.temperature).toBeNull()
+    // pc 永远给出：缺了 app 读成「还没数据=保持醒着」，熄屏链路断（2026-11-05 实证）
+    expect(snap.pc).toEqual({ online: false, updated_at: '' })
     expect(snap).not.toHaveProperty('phone')
     expect(snap).not.toHaveProperty('companion')
     expect(snap).not.toHaveProperty('caption')
+  })
+
+  it('pc：喂入真样本 → snapshot 透传；同值不递增 seq；变值递增', async () => {
+    const fresh = { online: true, updated_at: '2026-11-05T03:22:20Z', cpu: { percent: 15.4, temp_celsius: 32.1 } }
+    gateway.setPc(fresh)
+    const snap = (await web.dispatch('GET', '/v1/snapshot', undefined, authHeaders())).body as Record<string, unknown>
+    expect(snap.pc).toEqual(fresh)
+    const seqAfterFirst = snap.seq as number
+    // 同值重喂（模拟每个轮询周期）：seq 不动，长轮询等待者不被惊动
+    gateway.setPc({ ...fresh })
+    const snap2 = (await web.dispatch('GET', '/v1/snapshot', undefined, authHeaders())).body as Record<string, unknown>
+    expect(snap2.seq).toBe(seqAfterFirst)
+    // 变值（Windows 关机）：seq 递增，长轮询能收到
+    gateway.setPc({ online: false, updated_at: '' })
+    const snap3 = (await web.dispatch('GET', '/v1/snapshot', undefined, authHeaders())).body as Record<string, unknown>
+    expect((snap3.pc as { online: boolean }).online).toBe(false)
+    expect((snap3.seq as number) > seqAfterFirst).toBe(true)
   })
 
   it('caption：推 → snapshot 带文本/at/scale；clear → 键消失；空体 → 400；scale 越界 → 400', async () => {
