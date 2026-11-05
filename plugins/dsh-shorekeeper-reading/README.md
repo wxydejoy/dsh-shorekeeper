@@ -6,8 +6,8 @@
 
 ## 页面听书面板（2026-11-05）
 
-- 侧栏「小说朗读」入口（`client.js` 手写 classic-script bundle，order 43）：书架列表点书开读、正在朗读进度（3s 轮询）、停止/续读、语速 0.75–2.0、定时分钟（0=不限）、keeper-tts 在线灯
-- host 半区 `/reading-panel` RPC（`ctx.connection.rpc.handle`）：`books` / `status` / `play` / `stop`，与工具面共用同一 ListenEngine 实例——页面开的朗读和守岸人「读会儿书」是同一条线程，断点（listen-state.json）天然互通
+- 侧栏「小说朗读」入口（`client.js` 手写 classic-script bundle，order 43）：书架列表点书开读、**目录选章**（默认选中断点所在章）、**txt 导入**（UTF-8/GBK，15MB 上限）、正在朗读进度（3s 轮询）、停止/续读、语速 0.75–2.0、定时分钟（0=不限，只在本次开读生效）、**系统音量滑杆 + 静音**（osascript）、keeper-tts 在线灯
+- host 半区 `/reading-panel` RPC（`ctx.connection.rpc.handle`）：`books` / `status` / `play`(支持 fromOffset 章节直达) / `stop` / `chapters`(mtime 缓存) / `import` / `volume` / `setVolume` / `setMuted`，与工具面共用同一 ListenEngine 实例——页面开的朗读和守岸人「读会儿书」是同一条线程，断点（listen-state.json）天然互通
 - 信封契约对齐 dsh-keeper-console：error.code/message 字符串 + details 必须是对象
 
 ## 实现说明（2026-11-03 · 阶段一/二）
