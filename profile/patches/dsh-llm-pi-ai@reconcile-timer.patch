@@ -1,0 +1,25 @@
+--- /tmp/dsh-llm-pi-ai.index.js.bak-20261105	2026-11-05 15:28:36
++++ /opt/homebrew/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js	2026-11-05 15:30:24
+@@ -2963,6 +2963,22 @@
+ 			ctx.logger.error(error);
+ 		}
+ 	});
++	// [shorekeeper 2026-11-05] 自愈兜底：apply 时 profiles() 为空会跳过 adapter 注册，
++	// 且只靠 loader/volatile-update 事件补注册——事件不来就持续哑火
++	// （no adapter registered for provider "zhipu"，微信当天三连败的根因）。
++	// 改为周期性对账：注册表缺货而 profiles 有货时自动补上，不再依赖事件语义。
++	ctx.effect(function* () {
++		const timer = setInterval(() => {
++			try {
++				ensureRegistrationFacts();
++				ensureDirectory();
++			} catch (error) {
++				ctx.logger.error("llm-pi-ai: periodic reconciliation failed");
++				ctx.logger.error(error);
++			}
++		}, 20000);
++		yield () => clearInterval(timer);
++	}, "llm-pi-ai.reconcile-timer");
+ }
+ //#endregion
+ export { Config, PiAiAdapter, apply, inject, name, recordKeyFor, supportedProtocols };
