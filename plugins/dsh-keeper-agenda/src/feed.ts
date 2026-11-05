@@ -29,14 +29,17 @@ export async function fetchIcs(url: string): Promise<string> {
 }
 
 export class CalendarFeed {
+  readonly url: string
   private events: IcsEvent[] = []
   private okAt = -1e18
   private failAt = -1e18
+  private opts: { fetch?: Fetcher; ttlMs?: number; backoffMs?: number }
 
-  constructor(
-    readonly url: string,
-    private readonly opts: { fetch?: Fetcher; ttlMs?: number; backoffMs?: number } = {},
-  ) {}
+  // 注：不用 constructor 参数属性——dsh 以 strip-only 模式直载 .ts，不支持该语法
+  constructor(url: string, opts: { fetch?: Fetcher; ttlMs?: number; backoffMs?: number } = {}) {
+    this.url = url
+    this.opts = opts
+  }
 
   private async refresh(now: number): Promise<void> {
     const ttl = this.opts.ttlMs ?? CACHE_TTL_MS
