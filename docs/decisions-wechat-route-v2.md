@@ -1,6 +1,6 @@
 # T6 决策记录 v2 · 微信接入：合规通道选型
 
-> 2026-11-03。**取代** [decisions-wechat-route.md](./decisions-wechat-route.md)（wcferry / wechaty 挂真账号那条线）。
+> 2026-11-03。**取代** decisions-wechat-route.md（初版，已归 git 历史）（wcferry / wechaty 挂真账号那条线）。
 > 依据：漂泊者 2026-11-03 10:14 拍板「不碰真账号，用现有插件按合规路线接一条微信入口」。
 > 本文只做选型与规划，**不含实现**；装插件、建机器人等动作另开任务分支做。
 

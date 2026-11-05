@@ -1,6 +1,6 @@
 # dsh-shorekeeper-wechat
 
-> 状态：**实现中（T6）——路线已定（wcferry 主选，签字区待漂泊者）+ 插件三工具完成；桥实现与真机验证 ⏸** · 任务文档：[docs/tasks/T6-wechat.md](../../docs/tasks/T6-wechat.md) · 路线决策：[docs/decisions-wechat-route.md](docs/decisions-wechat-route.md) · 桥契约：[docs/bridge-contract.md](docs/bridge-contract.md)
+> 状态：**实现中（T6）——路线已定（wcferry 主选，签字区待漂泊者）+ 插件三工具完成；桥实现与真机验证 ⏸** · 任务文档：[docs/tasks/T6-wechat.md](../../docs/tasks/T6-wechat.md) · 路线决策：[docs/decisions-wechat-route-v2.md](../../docs/decisions-wechat-route-v2.md) · 桥契约：[docs/bridge-contract.md](docs/bridge-contract.md)
 
 微信接入：让守岸人知道微信里发生了什么——新消息摘要进上下文、按需代读、经确认代发。
 

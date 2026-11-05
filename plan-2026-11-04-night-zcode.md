@@ -17,7 +17,7 @@
 · Z10 第一批退役翻转+回滚演练（岸亭本地 commit）· Z4 本体（console API 驱动，k20 六工具 agent 级全绿）
 
 **二、等你三个点头**（全部已去险到零思考执行，runbook/草稿齐备）：
-① **B4**——浏览器/TUI 会话获得守岸人人格（[T3-b4-runbook.md](../tasks/T3-b4-runbook.md)，全链彩排通过，
+① **B4**——浏览器/TUI 会话获得守岸人人格（[T3-b4-runbook.md](docs/tasks/T3-b4-runbook.md)，全链彩排通过，
 原 IAB 冻结场景在外部浏览器无冻结；卡真注入实证=回「早。」守岸人腔）② **1.5.x 升级**（peer 未变+
 落点健在+草稿 patch 预打，15 分钟）③ **J3 建卡**（周日 retire 巡查 automation）
 

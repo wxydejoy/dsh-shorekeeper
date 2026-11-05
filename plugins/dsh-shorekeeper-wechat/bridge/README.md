@@ -1,6 +1,6 @@
 # wechat-bridge · 微信桥（Windows 挂机侧）
 
-守岸人微信接入的桥服务。契约：[docs/bridge-contract.md](../docs/bridge-contract.md)；路线与封号风险：[docs/decisions-wechat-route.md](../docs/decisions-wechat-route.md)（**接真账号前须漂泊者填签字区**）。
+守岸人微信接入的桥服务。契约：[docs/bridge-contract.md](../docs/bridge-contract.md)；路线与封号风险：[docs/decisions-wechat-route-v2.md](../../docs/decisions-wechat-route-v2.md)（**接真账号前须漂泊者填签字区**）。
 
 ## 分层
 

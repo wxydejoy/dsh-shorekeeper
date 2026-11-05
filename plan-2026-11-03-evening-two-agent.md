@@ -1,8 +1,8 @@
 # 待办更新 · 双人分工（2026-11-03 傍晚）
 
-> 输入：确认单 [confirmations-2026-11-03.md](../confirmations-2026-11-03.md)（提交 30239d4，A 组全部拍板）、
-> [decisions-wechat-route-v2.md](../decisions-wechat-route-v2.md)（18:30 更新：主路线改个人微信扫码）。
-> 取代 [plan-2026-11-03-night.md](./plan-2026-11-03-night.md) 的 P0–P3 顺序——那份的「明确不做」「漂泊者答复」部分仍有效，冲突处以确认单为准。
+> 输入：确认单 confirmations-2026-11-03.md（提交 30239d4，A 组全部拍板，已归 git 历史）、
+> [decisions-wechat-route-v2.md](docs/decisions-wechat-route-v2.md)（18:30 更新：主路线改个人微信扫码）。
+> 取代 plan-2026-11-03-night.md 的 P0–P3 顺序（该份已归 git 历史）——那份的「明确不做」「漂泊者答复」部分仍有效，冲突处以确认单为准。
 > **本轮只落文档，不动代码、不装插件。**
 
 ---
@@ -85,7 +85,7 @@
 - W1 · 2026-11-03 23:12 · 甲 · 修红全绿：k20 四处类型错修掉（caption 回读 scale、snapshot.lock.requested_at、布局写入改部分矩形补丁型——集成测试曾对真网关 8/8 过，类型过期测试未动）；desk-mi 补齐 dsh-tools 三枚 peer 依赖后入 check-all；`bash scripts/check-all.sh` 12 项全绿（分支 fix/w1-check-all-green 9f968d4，未推）
 - W2 · 2026-11-03 23:45 · 甲 · **迁移装机完成，冒烟三过一挂**：feiyu-memory@4.0.2、dsh-mijia-sidebar@1.0.1 + 自写四件（link: 链接）进 web profile，:3090 起实例；冒烟 ①k20 六工具全注册 ✅ ②reading 真书架《我合成了全世界》17.87%/第223章 ✅ ④米家只读 21 台真设备 + 卧室 24.8°C/62% ✅ ③`/v1/audio/speech` ⏸ keeper-voice 三工具注册且 keeper-tts /health 绿（shorekeeper 克隆就绪），但该端点在 dock `tts-openai-endpoint` 分支未合 main（A3 定 W8 手动迁移），**W8 落地后重测补证**。踩坑已回灌 install.sh（file:→link:，TS 参数属性禁令），插件代码修复在 fix/w2-node-ts-compat（c370c25、0f9416d，未推）。calendar 按需未装（暂无需求）。**W6（乙）可开工：k20 工具面已就绪**；踩坑另录：ShelfStore 启动时读盘，灌书后须重启实例
 - W11 · 2026-11-04 00:15 · 甲 · **feiyu 写侧打通并修一真 bug**：:3090 聊三轮日记 5→7 条（含青岛行程 salience 0.60），B5 已回填确认单。根因链：feiyu 固化 `reasoningEffort:"off"` 被 zhipu/GLM-4-Flash 拒（UNSUPPORTED_REASONING_EFFORT 以 finish chunk 到达）+ feiyu 错误识别读错字段（`finish.kind` ≠ `finish.reason.kind`）→ 兜底重试死代码、写侧全静默（lab 走 openrouter 无碰撞故未暴露）。修复：web profile 对 feiyu@4.0.2 打 pnpm patch（chunk 形态失败识别 + 触发既有退档重试），证据与 mitm 抓包在确认单 B5；**待办：给 feiyu 上游提 issue**。补总结 backfill 待下次启动自跑，未逐条验
-- W2a · 2026-11-04 00:18 · 甲 · **shorekeeper-lab 已退役**：归档先行——[docs/profile-shorekeeper-lab-archive.md](../profile-shorekeeper-lab-archive.md)（bundle 清单、cordis.patch.yml 全文、迁移去向映射、独占数据核查七项全过）+ 配置备份包 `~/.dsh/backups/shorekeeper-lab-profile-2026-11-04.tar.gz`；kill PID 85541 → rm profile 目录 → 复核 :3081 无监听、:3090 web 完好（HTTP 303 正常）。tavern/music/voice-mode 等 9 件生态插件随 profile 退役（数据在全局未动）；守岸人三预设 persona 文本已存档供 W4a 取用。shorekeeper-hl 不在 W2a 范围、未动
+- W2a · 2026-11-04 00:18 · 甲 · **shorekeeper-lab 已退役**：归档先行——profile-shorekeeper-lab-archive.md（已归 git 历史；bundle 清单、cordis.patch.yml 全文、迁移去向映射、独占数据核查七项全过）+ 配置备份包 `~/.dsh/backups/shorekeeper-lab-profile-2026-11-04.tar.gz`；kill PID 85541 → rm profile 目录 → 复核 :3081 无监听、:3090 web 完好（HTTP 303 正常）。tavern/music/voice-mode 等 9 件生态插件随 profile 退役（数据在全局未动）；守岸人三预设 persona 文本已存档供 W4a 取用。shorekeeper-hl 不在 W2a 范围、未动
 - W4a · 2026-11-04 00:30 · 甲 · **人格绑定装配完成，待真机口吻验收**：dsh-tavern 因 B4 冻结且随 lab 退役，改走 weixin 插件自带的自定义模式通道——T3 角色卡（character.json description/personality）+ 世界书两条常驻（意图分流/问句预算）合成「守岸人」自定义模式写入 `~/.dsh/weixin/persona-modes.json`（16 模式，UI 个性化页签已见卡），私聊覆盖键 `339bb4cde726@im.bot|` 由「女友」切到 shorekeeper（原值备份 /tmp/persona-*.backup.json，微信里 `/mode 默认` 可随时退回）。**W5 验收时若口吻偏差，调 persona-modes.json 的 prompt 即可**；tavern 全量卡/世界书待 B4 解冻后再上（资产在 .worktrees/t3/content/shorekeeper-card/，T3 分支）
 - W10 · 2026-11-04 00:40 · 甲 · **灌书完成，四工具全过**：公版志人小说集《世说新语》（刘义庆，南朝宋）从第一章「德行第一」起全文灌入（古诗文网取文，36 门 78,508 字，sha256 记于 shelf migrated 段）；书架两本可见、progress 记到德行第一 2%、note 摘抄「陈仲举言为士则…」落盘、ask 检索「陈仲举」命中原文。踩坑：书架文本源站点多被网络策略拦截（wikisource/gutenberg/marxists 全灭），gushiwen.cn 可达遂选之。C2 约定遵守（未记录岸亭真实书库路径）。ShelfStore 启动读盘：灌书后重启了一次实例
 - W12 · 2026-11-04 00:45 · 甲 · **M2 判定材料更新 + push 前清单落档**（merge-review-m2.md 新增章节）：判定线从「三支合完+A组过半」推进为「九支全合+装机自检实证」，证据索引表七行；待人工项四组（W5 口吻真机 / W6·W7 真机 / W8·W9 dock 与 TTS / B 组余项）；push 前清单列四分支（fix/w1 → fix/w2 栈式、docs、chore）+ 合并后重跑 check-all（fix/w2 上已复跑 12 项全绿）→ **绿了才推，push 点头归漂泊者**。甲线到此收口：W1✅ W2✅（③挂起等W8） W2a✅ W4a✅（口吻待W5） W3✅ W10✅ W11✅ W12✅；**W5 挂起等手机私聊**
