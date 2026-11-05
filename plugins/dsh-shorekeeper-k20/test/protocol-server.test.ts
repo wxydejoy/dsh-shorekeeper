@@ -97,7 +97,7 @@ describe('k20 网关服务端', () => {
     registerK20Server({
       ctx: { effect: (fn: () => void) => fn() } as never,
       webServer: web,
-      config: { token: TOKEN, serverName: 'study', companionUpstream: '' },
+      config: { token: TOKEN, serverName: 'study', companionUpstream: '', hubUpstream: '' },
       gateway,
     })
   })
@@ -151,6 +151,23 @@ describe('k20 网关服务端', () => {
     const snap3 = (await web.dispatch('GET', '/v1/snapshot', undefined, authHeaders())).body as Record<string, unknown>
     expect((snap3.pc as { online: boolean }).online).toBe(false)
     expect((snap3.seq as number) > seqAfterFirst).toBe(true)
+  })
+
+  it('photos（F37）：喂名单 → snapshot.photos 透传；空相册不带字段；名单变化 bump seq', async () => {
+    // 相册没开/没图：不带字段（同 hub 的「没图不带」语义）
+    gateway.setPhotos(null)
+    let snap = (await web.dispatch('GET', '/v1/snapshot', undefined, authHeaders())).body as Record<string, unknown>
+    expect(snap).not.toHaveProperty('photos')
+    // 名单进来 → 透传 + /v1/photos 名单面可取
+    gateway.setPhotos({ ids: ['a.jpg', 'b.png'] })
+    snap = (await web.dispatch('GET', '/v1/snapshot', undefined, authHeaders())).body as Record<string, unknown>
+    expect(snap.photos).toEqual({ ids: ['a.jpg', 'b.png'] })
+    const list = (await web.dispatch('GET', '/v1/photos', undefined, authHeaders())).body as { ids: string[] }
+    expect(list.ids).toEqual(['a.jpg', 'b.png'])
+    // 空列表等价于没图（防误配空目录）
+    gateway.setPhotos({ ids: [] })
+    snap = (await web.dispatch('GET', '/v1/snapshot', undefined, authHeaders())).body as Record<string, unknown>
+    expect(snap).not.toHaveProperty('photos')
   })
 
   it('caption：推 → snapshot 带文本/at/scale；clear → 键消失；空体 → 400；scale 越界 → 400', async () => {
@@ -233,7 +250,7 @@ describe('k20 网关服务端', () => {
     registerK20Server({
       ctx: { effect: (fn: () => void) => fn() } as never,
       webServer: hostWeb,
-      config: { token: TOKEN, serverName: 'study', companionUpstream: `http://127.0.0.1:${upPort}` },
+      config: { token: TOKEN, serverName: 'study', companionUpstream: `http://127.0.0.1:${upPort}`, hubUpstream: `http://127.0.0.1:${upPort}` },
       gateway: new K20Gateway('study'),
     })
     const host = createHttpServer((hreq, hres) => {
@@ -284,7 +301,7 @@ describe('k20 网关服务端', () => {
     registerK20Server({
       ctx: { effect: (fn: () => void) => fn() } as never,
       webServer: web2,
-      config: { token: TOKEN, serverName: 'study', companionUpstream: 'http://127.0.0.1:17890' },
+      config: { token: TOKEN, serverName: 'study', companionUpstream: 'http://127.0.0.1:17890', hubUpstream: 'http://127.0.0.1:17890' },
       gateway: gateway2,
     })
     snap = (await web2.dispatch('GET', '/v1/snapshot', undefined, authHeaders())).body as Record<string, unknown>

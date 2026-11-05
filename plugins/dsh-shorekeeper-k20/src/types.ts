@@ -88,7 +88,14 @@ export interface Snapshot {
   caption?: CaptionState | null
   /** 协议增补提案：/v1/lock 请求后的熄屏状态 */
   lock?: LockState | null
+  /** 回忆相框（F37）：真 hub photos/ 目录的照片名单；相册没开/没图不带（同 hub） */
+  photos?: PhotoIds | null
   [key: string]: unknown
+}
+
+/** 回忆相框（F37）：照片 id 名单，字节走 GET /v1/photos/:id（模拟面代理真 hub） */
+export interface PhotoIds {
+  ids: string[]
 }
 
 export interface PhoneState {

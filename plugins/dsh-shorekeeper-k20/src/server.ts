@@ -24,7 +24,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { request as httpRequest } from 'node:http'
 import type { Context, Disposable } from '@deepseek-ai/cordis'
-import type { CaptionState, CompanionState, LockState, MediaState, PcState, PhoneLayout, PhoneModulePatch, Snapshot } from './types.ts'
+import type { CaptionState, CompanionState, LockState, MediaState, PcState, PhoneLayout, PhoneModulePatch, PhotoIds, Snapshot } from './types.ts'
 
 /** pc 样本的有效期：真 hub 的探针 stale_ms 是 12s，这里放宽到 60s——
  *  长轮询本身 25s 一轮，太紧会把正常的轮询间隔误判成探针断线。 */
@@ -107,6 +107,7 @@ export class K20Gateway {
   private companion: CompanionState | null = null
   private pc: PcState | null = null
   private pcAt = 0
+  private photos: PhotoIds | null = null
 
   private readonly hubName: string
 
@@ -240,6 +241,19 @@ export class K20Gateway {
     if (JSON.stringify(prev) !== JSON.stringify(state)) this.bump()
   }
 
+  /** 喂相框名单（F37，来自真 hub 的 snapshot.photos）。名单变了才 bump，
+   *  长轮询立刻叫醒 app 刷新相框。没图/相册没开传 null。 */
+  setPhotos(state: PhotoIds | null): void {
+    const prev = this.photos
+    this.photos = state !== null && state.ids.length > 0 ? state : null
+    if (JSON.stringify(prev) !== JSON.stringify(this.photos)) this.bump()
+  }
+
+  /** 相框名单（/v1/photos 名单面）。相册没开是空列表，不算错（同 hub）。 */
+  photoIds(): string[] {
+    return this.photos?.ids ?? []
+  }
+
   /** pc 对 app 的语义必须完整：缺 pc = 「还没数据 = 保持醒着」（DockViewModel
    *  noteDeskPc 的分支），熄屏链路会断——所以这里永远给出 pc。
    *  真样本过期（PC_STALE_MS）或从未有过 → online:false，对齐真 hub 的
@@ -274,6 +288,7 @@ export class K20Gateway {
     if (this.caption !== null) snap.caption = this.caption
     if (this.lock !== null) snap.lock = this.lock
     if (this.companion !== null) snap.companion = this.companion
+    if (this.photos !== null) snap.photos = this.photos
     return snap
   }
 }
@@ -284,7 +299,7 @@ export interface K20ServerDeps {
   webServer: {
     register(route: { kind: 'exact' | 'prefix'; path: string; handler: (req: IncomingMessage, res: ServerResponse) => unknown }): Disposable
   }
-  config: { token: string; serverName: string; companionUpstream: string }
+  config: { token: string; serverName: string; companionUpstream: string; hubUpstream: string }
   gateway: K20Gateway
 }
 
@@ -499,6 +514,36 @@ export function registerK20Server(deps: K20ServerDeps): void {
       }),
     },
     'k20 网关 /v1/companion/*（代理伴侣面）',
+  )
+
+  // —— F37 回忆相框：名单本地答，字节代理真 hub ——
+  // 名单来自 watcher 喂进来的 snapshot.photos（≤25s 新鲜度，对相框足够）；
+  // 字节走真 hub /v1/photos/:id（原样透传状态码/ETag/Content-Type，304 直通）。
+  register(
+    {
+      kind: 'exact',
+      path: '/v1/photos',
+      handler: guarded(async (_req, res) => {
+        sendJson(res, 200, { ids: gateway.photoIds() })
+      }),
+    },
+    'k20 网关 /v1/photos（F37 名单）',
+  )
+
+  register(
+    {
+      kind: 'prefix',
+      path: '/v1/photos/',
+      handler: guarded(async (req, res) => {
+        const upstream = config.hubUpstream.trim()
+        if (upstream === '') {
+          sendError(res, 404, 'photos_disabled', '真 hub 未接入（hubUpstream 未配置）')
+          return
+        }
+        proxyRequest(req, res, upstream + (req.url ?? ''), ctx, 'photos')
+      }),
+    },
+    'k20 网关 /v1/photos/*（代理真 hub 照片字节）',
   )
 }
 

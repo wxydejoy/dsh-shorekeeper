@@ -40,6 +40,7 @@ export function apply(ctx: Context, config: K20Config): void {
     waitSec: 25,
     onSnapshot: (snapshot) => {
       face?.setPc(snapshot.pc ?? null)
+      face?.setPhotos(snapshot.photos ?? null)
     },
     onError: (error) => {
       ctx.logger('k20').warn('长轮询断开，将自动重连：%s', error instanceof Error ? error.message : String(error))
@@ -65,6 +66,7 @@ export function apply(ctx: Context, config: K20Config): void {
       token: config.token,
       serverName: config.serverName ?? 'study',
       companionUpstream: config.companionUpstream ?? 'http://127.0.0.1:17890',
+      hubUpstream: hubBaseUrl(config),
     },
     gateway: faceState,
   })
