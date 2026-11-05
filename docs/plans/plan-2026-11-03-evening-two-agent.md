@@ -1,0 +1,1 @@
+- 语音修复 · 2026-11-05 18:3x · 守岸人 · **朗读音色/慢双 bug 闭环**：dsh-tts custom 链断在两处——①launchd 缺 CUSTOM_TTS_API_KEY（熔断静默回落 edge 小晓）→ plist 补占位 key；②keeper-tts 只认 wav/pcm 而 dsh-tts 只发 mp3 → dock/companion/tts/server.py 加 ffmpeg wav_to_mp3（绝对路径，plist 无 PATH 坑）。preview 实证 200 出守岸人克隆音，stats custom e=0。**dock 仓库本地改动待漂泊者点头再推**。dsh-tts chain 实际存于 UI settings store（非插件 Config 字段），现状已对不动。
