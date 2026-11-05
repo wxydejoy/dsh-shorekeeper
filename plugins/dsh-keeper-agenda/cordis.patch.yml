@@ -1,0 +1,4 @@
+# dsh-keeper-agenda bundle patch：把 host 插件行插进 profile 层
+- insert:
+    - id: dsh-keeper-agenda
+      name: 'dsh-keeper-agenda'
