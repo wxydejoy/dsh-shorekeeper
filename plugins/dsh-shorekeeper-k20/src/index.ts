@@ -67,6 +67,8 @@ export function apply(ctx: Context, config: K20Config): void {
       serverName: config.serverName ?? 'study',
       companionUpstream: config.companionUpstream ?? 'http://127.0.0.1:17890',
       hubUpstream: hubBaseUrl(config),
+      ttsBaseUrl: config.ttsBaseUrl ?? 'http://127.0.0.1:18100',
+      ttsToken: config.ttsToken ?? '',
     },
     gateway: faceState,
   })

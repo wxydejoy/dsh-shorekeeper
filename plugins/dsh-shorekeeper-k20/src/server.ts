@@ -3,8 +3,9 @@
  * 在 DSH 宿主的 webServer 上把 lan-protocol v1 服务化，让 k20 app 可以直连 dsh：
  * 现役面六张——/health（免鉴权）、/v1/snapshot（Bearer + 长轮询）、/v1/caption、
  * /v1/phone/layout、/v1/lock、/v1/devices/{id}/command（media 乐观应答，其余 404）。
- * companion 面代理到 companionUpstream（默认旧 hub：她的语音链 T3/T4 前还长在那边），
- * 置空则按协议「可关」语义整面 404。
+ * 语音直连：/v1/companion/announce|stop 本地实现，直接打 keeper-tts（:18100 /v1/speak|/v1/stop，
+ * hub 退役第一步，不再借道旧 hub）。companion 其余面（chat/memory/audio，大脑还在旧 hub）
+ * 代理到 companionUpstream，置空则按协议「可关」语义整面 404。
  *
  * 注册方式对齐 dsh-obmc-web 的先例：`inject ['webServer']` 的宿主里
  * `webServer.register({kind: 'exact'|'prefix', path, handler})`，handler 是
@@ -84,6 +85,63 @@ function authorized(req: IncomingMessage, token: string): boolean {
   if (typeof header !== 'string') return false
   const match = /^Bearer (.+)$/.exec(header)
   return match !== null && match[1] === token
+}
+
+/** 对齐 hub speech.clip_announce：announce 只说短的，最多 3 句，兜底 160 字。 */
+function clipAnnounce(text: string, maxSentences = 3): string {
+  const stripped = (text || '').trim()
+  if (stripped === '') return ''
+  const sentences = stripped.split(/(?<=[。！？!?…])/).map((s) => s.trim()).filter(Boolean)
+  const head = sentences.slice(0, maxSentences).join('')
+  if (head !== '') return head
+  return stripped.length <= 160 ? stripped : stripped.slice(0, 159) + '…'
+}
+
+/** 往 keeper-tts 发一个 JSON POST（语音直连）。永不 reject：连不上/超时/回包异常都 resolve null。 */
+function postJsonToTts(
+  base: string,
+  path: string,
+  body: unknown,
+  token: string,
+  timeoutMs: number,
+): Promise<{ status: number } | null> {
+  return new Promise((resolve) => {
+    let url: URL
+    try {
+      url = new URL(path, base.endsWith('/') ? base : base + '/')
+    } catch {
+      resolve(null)
+      return
+    }
+    const payload = Buffer.from(JSON.stringify(body), 'utf8')
+    let settled = false
+    const done = (value: { status: number } | null): void => {
+      if (!settled) {
+        settled = true
+        resolve(value)
+      }
+    }
+    const req = httpRequest(
+      url,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'content-length': String(payload.length),
+          ...(token !== '' ? { authorization: `Bearer ${token}` } : {}),
+        },
+        timeout: timeoutMs,
+      },
+      (res) => {
+        res.resume()
+        res.on('end', () => done({ status: res.statusCode ?? 0 }))
+        res.on('close', () => done({ status: res.statusCode ?? 0 }))
+      },
+    )
+    req.on('timeout', () => req.destroy())
+    req.on('error', () => done(null))
+    req.end(payload)
+  })
 }
 
 function nowIso(): string {
@@ -299,7 +357,7 @@ export interface K20ServerDeps {
   webServer: {
     register(route: { kind: 'exact' | 'prefix'; path: string; handler: (req: IncomingMessage, res: ServerResponse) => unknown }): Disposable
   }
-  config: { token: string; serverName: string; companionUpstream: string; hubUpstream: string }
+  config: { token: string; serverName: string; companionUpstream: string; hubUpstream: string; ttsBaseUrl: string; ttsToken: string }
   gateway: K20Gateway
 }
 
@@ -493,6 +551,59 @@ export function registerK20Server(deps: K20ServerDeps): void {
       }),
     },
     'k20 网关 /v1/devices/*',
+  )
+
+  // —— /v1/companion/announce|stop：语音直连 keeper-tts（hub 退役第一步）——
+  // 出声 = POST :18100/v1/speak（play_only=true，TTS 自己占本机喇叭，3s 超时只等收执）；
+  // 闭嘴 = POST /v1/stop（0.8s）。与 hub tts.py 的合同逐字段对齐（voice/language/turn_id/speed）。
+  // 大脑（chat/memory/audio）还在旧 hub，继续走下方 prefix 代理；TTS 没应答也照常 200
+  // （app 只吃 {text, audio_id} 形状，语音缺席仅记日志——hub 的熔断语义这里不搬，直连链路短得多）。
+  const ttsBase = config.ttsBaseUrl.trim().replace(/\/+$/, '')
+  const ttsToken = config.ttsToken.trim()
+
+  register(
+    {
+      kind: 'exact',
+      path: '/v1/companion/announce',
+      handler: guarded(async (req, res) => {
+        const body = (await readJsonBody(req)) as { text?: unknown; turn_id?: unknown }
+        const text = clipAnnounce(typeof body.text === 'string' ? body.text : '')
+        if (text === '') {
+          sendError(res, 400, 'bad_request', 'text 不能为空')
+          return
+        }
+        const turn = typeof body.turn_id === 'string' && body.turn_id !== '' ? body.turn_id : `ann-${Date.now()}`
+        if (ttsBase !== '') {
+          const spoken = await postJsonToTts(
+            ttsBase,
+            '/v1/speak',
+            { text, voice: 'shorekeeper', language: 'chinese', turn_id: turn, speed: 1.0, play_only: true },
+            ttsToken,
+            3000,
+          )
+          if (spoken === null || spoken.status < 200 || spoken.status >= 300) {
+            ctx.logger?.('k20')?.warn?.('announce 直连 TTS 未应答（status=%s），本轮只出字幕', spoken?.status ?? 'n/a')
+          }
+        }
+        sendJson(res, 200, { text, audio_id: null })
+      }),
+    },
+    'k20 网关 /v1/companion/announce（直连 keeper-tts /v1/speak）',
+  )
+
+  register(
+    {
+      kind: 'exact',
+      path: '/v1/companion/stop',
+      handler: guarded(async (req, res) => {
+        await readJsonBody(req)
+        if (ttsBase !== '') {
+          await postJsonToTts(ttsBase, '/v1/stop', {}, ttsToken, 800)
+        }
+        sendJson(res, 200, { ok: true })
+      }),
+    },
+    'k20 网关 /v1/companion/stop（直连 keeper-tts /v1/stop）',
   )
 
   // —— /v1/companion/*：代理到伴侣大脑（默认旧 hub）——

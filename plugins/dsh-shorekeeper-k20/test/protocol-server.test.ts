@@ -97,7 +97,7 @@ describe('k20 网关服务端', () => {
     registerK20Server({
       ctx: { effect: (fn: () => void) => fn() } as never,
       webServer: web,
-      config: { token: TOKEN, serverName: 'study', companionUpstream: '', hubUpstream: '' },
+      config: { token: TOKEN, serverName: 'study', companionUpstream: '', hubUpstream: '', ttsBaseUrl: '', ttsToken: '' },
       gateway,
     })
   })
@@ -250,7 +250,7 @@ describe('k20 网关服务端', () => {
     registerK20Server({
       ctx: { effect: (fn: () => void) => fn() } as never,
       webServer: hostWeb,
-      config: { token: TOKEN, serverName: 'study', companionUpstream: `http://127.0.0.1:${upPort}`, hubUpstream: `http://127.0.0.1:${upPort}` },
+      config: { token: TOKEN, serverName: 'study', companionUpstream: `http://127.0.0.1:${upPort}`, hubUpstream: `http://127.0.0.1:${upPort}`, ttsBaseUrl: `http://127.0.0.1:${upPort}`, ttsToken: '' },
       gateway: new K20Gateway('study'),
     })
     const host = createHttpServer((hreq, hres) => {
@@ -283,11 +283,69 @@ describe('k20 网关服务端', () => {
     }
   })
 
+  it('语音直连：announce→TTS /v1/speak（play_only）、stop→TTS /v1/stop，全程不碰 hub；空 text 400；超长只留 3 句', async () => {
+    const seen: { path: string; body: Record<string, unknown> }[] = []
+    const tts = createHttpServer((treq, tres) => {
+      let body = ''
+      treq.on('data', (c: Buffer) => {
+        body += c.toString()
+      })
+      treq.on('end', () => {
+        seen.push({ path: treq.url ?? '', body: JSON.parse(body || '{}') as Record<string, unknown> })
+        tres.writeHead(200, { 'content-type': 'application/json' })
+        tres.end('{"ok":true}')
+      })
+    })
+    const hub = createHttpServer((hreq, hres) => {
+      hres.writeHead(500, { 'content-type': 'application/json' })
+      hres.end(JSON.stringify({ error: { code: 'hub_should_not_be_called', message: `announce/stop 不该到 hub（${hreq.url}）` } }))
+    })
+    await new Promise<void>((r) => tts.listen(0, '127.0.0.1', r))
+    await new Promise<void>((r) => hub.listen(0, '127.0.0.1', r))
+    const ttsPort = (tts.address() as AddressInfo).port
+    const hubPort = (hub.address() as AddressInfo).port
+
+    const hostWeb = createMockWebServer()
+    registerK20Server({
+      ctx: { effect: (fn: () => void) => fn() } as never,
+      webServer: hostWeb,
+      config: { token: TOKEN, serverName: 'study', companionUpstream: `http://127.0.0.1:${hubPort}`, hubUpstream: `http://127.0.0.1:${hubPort}`, ttsBaseUrl: `http://127.0.0.1:${ttsPort}`, ttsToken: '' },
+      gateway: new K20Gateway('study'),
+    })
+
+    try {
+      const ann = await hostWeb.dispatch('POST', '/v1/companion/announce', { text: '回来啦。灯给你留着。今天很累。第四句不该出现。' }, authHeaders())
+      expect(ann.status).toBe(200)
+      expect(ann.body).toEqual({ text: '回来啦。灯给你留着。今天很累。', audio_id: null })
+      expect(seen).toHaveLength(1)
+      expect(seen[0]?.path).toBe('/v1/speak')
+      expect(seen[0]?.body.voice).toBe('shorekeeper')
+      expect(seen[0]?.body.play_only).toBe(true)
+      expect(String(seen[0]?.body.turn_id)).toMatch(/^ann-/)
+
+      const stop = await hostWeb.dispatch('POST', '/v1/companion/stop', {}, authHeaders())
+      expect(stop.status).toBe(200)
+      expect(stop.body).toEqual({ ok: true })
+      expect(seen).toHaveLength(2)
+      expect(seen[1]?.path).toBe('/v1/stop')
+
+      const empty = await hostWeb.dispatch('POST', '/v1/companion/announce', { text: '   ' }, authHeaders())
+      expect(empty.status).toBe(400)
+      expect((empty.body as { error?: { code?: string } }).error?.code).toBe('bad_request')
+    } finally {
+      tts.close()
+      hub.close()
+    }
+  })
+
   it('devices prefix 注册不带尾斜杠（宿主按段匹配的坑）', () => {
     const devices = web.routes.find((r) => r.path.startsWith('/v1/devices'))
-    const companion = web.routes.find((r) => r.path.startsWith('/v1/companion'))
+    // companion 面里 announce/stop 已改 exact 直连（语音直连），大脑代理的 prefix 排在它们后面
+    const companion = web.routes.find((r) => r.kind === 'prefix' && r.path.startsWith('/v1/companion'))
     expect(devices?.path).toBe('/v1/devices')
     expect(companion?.path).toBe('/v1/companion')
+    expect(web.routes.find((r) => r.kind === 'exact' && r.path === '/v1/companion/announce')).toBeTruthy()
+    expect(web.routes.find((r) => r.kind === 'exact' && r.path === '/v1/companion/stop')).toBeTruthy()
   })
 
   it('companion 代理在位时快照带 companion.ready=true（app 语音门）；置空时不带', async () => {
@@ -301,7 +359,7 @@ describe('k20 网关服务端', () => {
     registerK20Server({
       ctx: { effect: (fn: () => void) => fn() } as never,
       webServer: web2,
-      config: { token: TOKEN, serverName: 'study', companionUpstream: 'http://127.0.0.1:17890', hubUpstream: 'http://127.0.0.1:17890' },
+      config: { token: TOKEN, serverName: 'study', companionUpstream: 'http://127.0.0.1:17890', hubUpstream: 'http://127.0.0.1:17890', ttsBaseUrl: '', ttsToken: '' },
       gateway: gateway2,
     })
     snap = (await web2.dispatch('GET', '/v1/snapshot', undefined, authHeaders())).body as Record<string, unknown>

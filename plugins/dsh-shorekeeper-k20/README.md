@@ -33,7 +33,7 @@ k20 安卓横屏摆件的 DSH 驱动插件：把这块屏变成守岸人的「�
 | Hub v1 协议客户端 | 瘦身 Hub（:17890） | `reference/lan-protocol.md` | ✅ Bearer/长轮询(seq)/退避重连/超时分级；`SnapshotWatcher` 供 T3/T4 订阅 |
 | BackgroundServer 客户端 | k20 安卓端（:17920） | dock 仓库 `BackgroundServer.kt` 实测 | ✅ cookie 会话、list/upload(即生效)/select/clear/remove、layout 只读 |
 | 网关增补提案客户端 | 瘦身 Hub（待 T7 实现） | [docs/protocol-addendum.md](docs/protocol-addendum.md) | ⚠️ `/v1/caption`、`/v1/phone/layout`、`/v1/lock` 三条提案路由，落地前真机 404 → 工具层优雅降级 |
-| **网关服务端**（T7 直链） | 本实例宿主 webServer | lan-protocol v1 + 增补提案 | ✅ `serve: true` 开启；`/health`、`/v1/snapshot`（长轮询）、`/v1/caption`、`/v1/phone/layout`、`/v1/lock`、`/v1/devices/*`（media 乐观应答）、`/v1/companion/*`（代理到 companionUpstream＝旧 hub，语音链 T3/T4 前借道；置空则 404）；单测 test/protocol-server.test.ts。宿主 `dsh web --host <局域网IP>` 才能被 k20 直连 |
+| **网关服务端**（T7 直链） | 本实例宿主 webServer | lan-protocol v1 + 增补提案 | ✅ `serve: true` 开启；`/health`、`/v1/snapshot`（长轮询）、`/v1/caption`、`/v1/phone/layout`、`/v1/lock`、`/v1/devices/*`（media 乐观应答）、`/v1/companion/announce\|stop`（**语音直连 keeper-tts :18100**，hub 退役第一步；ttsBaseUrl 置空则只回执不出声）、`/v1/companion/*` 其余（chat/memory/audio，大脑还在旧 hub，代理到 companionUpstream；置空则 404）；单测 test/protocol-server.test.ts。宿主 `dsh web --host <局域网IP>` 才能被 k20 直连 |
 
 - 工具定义用 `@deepseek-ai/dsh-tools` 的 `defineTool` DSL（`@deepseek-ai/dsh@0.2.1-rc.5` 实测）：参数根级平铺、required 是每属性注解
 - 已知 TODO（T1 真机校准）：设置卡片接线（rc.5 SDK 未暴露 `installSection`）、高危工具的 host 审批接线（暂以 `lockEnabled` 配置闸门兜底）、watcher 随 fiber 卸载（SDK Events 无 dispose 事件）
