@@ -17,6 +17,7 @@ import { connect as netConnect, type Socket } from 'node:net'
 import { AlertGate, Sustained } from './gates.ts'
 import { createNotifyClient, type NotifyClient } from './notify.ts'
 import { Config, type KeeperWatchConfig } from './config.ts'
+import { applyWatchOverrides, readWatchOverridesSync } from './overrides.ts'
 import {
   airAlertText,
   fetchHourly,
@@ -60,12 +61,17 @@ const AIR_SUSTAINED_SEC = 600
 // 桥发送失败的重试冷静期：别每个 tick 都往挂掉的桥上撞
 const SEND_RETRY_MS = 10 * 60_000
 
-/** 判定核心（纯逻辑，测试可直接驱动）。 */
+/** 判定核心（纯逻辑，测试可直接驱动）。
+ *
+ * config 传可变对象（apply 侧每个 tick 先刷新覆盖文件），闸门参数在 tick 头
+ * 热重建——面板改免打扰/配额即刻生效，不用重启 dsh。
+ */
 export function createWatcher(config: KeeperWatchConfig, deps: WatcherDeps, log?: {
   info(fmt: string, ...args: unknown[]): void
   warn(fmt: string, ...args: unknown[]): void
 }): Watcher {
-  const gate = new AlertGate({ quietHours: config.quietHours, dailyLimit: config.dailyLimit })
+  let gate = new AlertGate({ quietHours: config.quietHours, dailyLimit: config.dailyLimit })
+  let gateKey = JSON.stringify([config.quietHours, config.dailyLimit])
   const sustained = new Sustained()
   const send = (text: string) => deps.notify.send(text)
   let lastWeatherCheck = 0
@@ -89,6 +95,17 @@ export function createWatcher(config: KeeperWatchConfig, deps: WatcherDeps, log?
 
   return {
     async tickOnce(now: Date = new Date()): Promise<void> {
+      // 总开关（面板可关）：关着就闭嘴，坏状态清零，重开后从零计时
+      if (!config.enabled) {
+        sustained.clearAll()
+        return
+      }
+      // 闸门参数热重建（面板改免打扰/配额即刻生效）；重建会重置当日计数，可接受
+      const key = JSON.stringify([config.quietHours, config.dailyLimit])
+      if (key !== gateKey) {
+        gate = new AlertGate({ quietHours: config.quietHours, dailyLimit: config.dailyLimit })
+        gateKey = key
+      }
       // —— PC（温度 / 内存 / 离线）——
       try {
         const snap = await deps.fetchSnapshot()
@@ -171,6 +188,17 @@ export function createWatcher(config: KeeperWatchConfig, deps: WatcherDeps, log?
 export function apply(ctx: Context, config: KeeperWatchConfig): void {
   const notify = createNotifyClient({ url: config.notifyUrl, tokenPath: config.notifyTokenPath })
 
+  // 面板运行时覆盖（~/.dsh/keeper-settings.json）：每个 tick 现读，
+  // 缺文件/缺字段回落 Config 基线。live 对象传给 watcher，tick 内读到的都是现值。
+  const live: KeeperWatchConfig = { ...config }
+  function refreshLive(): void {
+    const merged = applyWatchOverrides(config, readWatchOverridesSync())
+    live.enabled = merged.enabled
+    live.quietHours = merged.quietHours
+    live.dailyLimit = merged.dailyLimit
+  }
+  refreshLive()
+
   async function fetchSnapshot(): Promise<HubSnapshot | null> {
     const resp = await fetch(`${config.hubBaseUrl}/v1/snapshot`, {
       headers: config.hubToken ? { authorization: `Bearer ${config.hubToken}` } : {},
@@ -191,9 +219,11 @@ export function apply(ctx: Context, config: KeeperWatchConfig): void {
     }
   }
 
-  const watcher = createWatcher(config, { fetchHourly, fetchPm25, fetchSnapshot, phoneAlive, notify }, ctx.logger('keeper-watch'))
+  const watcher = createWatcher(live, { fetchHourly, fetchPm25, fetchSnapshot, phoneAlive, notify }, ctx.logger('keeper-watch'))
+  refreshLive()
   watcher.tickOnce().catch(() => {}) // 起步先跑一轮，错了不挡装载
   const timer = setInterval(() => {
+    refreshLive()
     watcher.tickOnce().catch(() => {})
   }, config.tickSec * 1000)
   timer.unref?.()

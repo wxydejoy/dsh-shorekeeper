@@ -47,6 +47,11 @@ export class Sustained {
   clear(key: string): void {
     this.first.delete(key)
   }
+
+  /** 全清（总开关关闭时用：重开后所有事从零计时）。 */
+  clearAll(): void {
+    this.first.clear()
+  }
 }
 
 /** 异动闸：免打扰 / 配额 / 同一件事一天一次。 */

@@ -1,0 +1,5 @@
+# dsh-keeper-console bundle patch：同一行既是宿主插件（node 半区，
+# package main -> lib/index.js），又是浏览器名册项（dsh.client 声明 -> lib/client.js）。
+- insert:
+    - id: dsh-keeper-console
+      name: 'dsh-keeper-console'

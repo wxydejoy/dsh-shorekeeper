@@ -7,7 +7,7 @@
 - dsh 插件约定：TS，`export const inject = ['tools']`；分支上改、check-all 绿了合 main 可推（漂泊者既有授权）。
 
 ## 漂泊者的规矩与偏好
-- 进度交接板：docs/plans/plan-2026-11-03-evening-two-agent.md 的「进度」区，每完成一项 W 追加一行。
+- 进度交接板：仓库根 `plan-2026-11-03-evening-two-agent.md` 的「进度」区，每完成一项 W 追加一行（2026-11-05 从 docs/plans/ 移出，同批根目录还有 zcode 夜班主计划）。
 - 一次一件事、别问太多、不擅自 push 越权的东西（push 授权以「绿了可推」为准，高危项如熄屏要他点头）。
 - feiyu 话题已撤项（2026-11-04「别提了 删掉」）：上游 issue 不提交；feiyu-memory 本体（日记记忆插件）仍在用。
 - 思考拆面（2026-11-04 定调）：**安卓端/dock 控制不深度思考，微信聊天保留思考**。禁止把 thinking disabled 焊到微信链路；微信提速走 prompt 瘦身/米家链路，不动思考。

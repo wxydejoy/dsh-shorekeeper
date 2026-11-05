@@ -4,6 +4,7 @@ import { defineTool, type ToolDefinition } from '@deepseek-ai/dsh-tools'
 import type { MiBridge } from './bridge.ts'
 import type { DeskMiConfig } from './config.ts'
 import { TokenBucketLimiter } from './limiter.ts'
+import { applyDeskMiOverrides, readDeskMiOverridesSync } from './overrides.ts'
 
 type Json = string | number | boolean | null | Json[] | { [key: string]: Json }
 
@@ -34,11 +35,16 @@ export function createDeskMiTools(deps: DeskMiToolDeps): ToolDefinition[] {
   const { bridge, config } = deps
   const now = deps.now ?? (() => new Date())
 
-  // 设备控制限流（hub ratelimit.py 对标）：按设备名分桶，model 爱连发也撞不坏米家
-  const limiter =
-    config.controlPerMinute > 0
-      ? new TokenBucketLimiter(config.controlPerMinute)
-      : null
+  // 设备控制限流（hub ratelimit.py 对标）：按设备名分桶，model 爱连发也撞不坏米家。
+  // 闸门/配额现读面板覆盖（keeper-settings.json deskMi 段）：配额变了重建桶，
+  // 已有的令牌不保留——改小配额立即收紧，改大要等桶重置，偏保守可接受。
+  let limiter: TokenBucketLimiter | null =
+    config.controlPerMinute > 0 ? new TokenBucketLimiter(config.controlPerMinute) : null
+  let limiterPerMinute = config.controlPerMinute
+
+  function effectiveControl(): { controlEnabled: boolean; controlPerMinute: number } {
+    return applyDeskMiOverrides(config, readDeskMiOverridesSync())
+  }
 
   const deskNow = defineTool({
     name: 'desk_now',
@@ -144,8 +150,9 @@ export function createDeskMiTools(deps: DeskMiToolDeps): ToolDefinition[] {
       render: (_args, value) => [{ type: 'text', text: summaryOf(value) }],
     },
     async execute(args) {
-      if (!config.controlEnabled) {
-        const message = '米家写入未开闸（配置 controlEnabled=false）：按安全红线默认拒绝，需要在插件设置里明确开启'
+      const effective = effectiveControl()
+      if (!effective.controlEnabled) {
+        const message = '米家写入未开闸（守岸人设置面板或插件配置里是关的）：按安全红线默认拒绝'
         return { ok: false, degraded: message, summary: '这次没动成。米家写入没开闸。' } satisfies Json
       }
       const name = typeof args.name === 'string' ? args.name.trim() : ''
@@ -157,10 +164,14 @@ export function createDeskMiTools(deps: DeskMiToolDeps): ToolDefinition[] {
         return { ok: false, degraded: 'brightness 需要 1-100', summary: '亮度要 1 到 100' } satisfies Json
       }
       // 限流安全闸（hub ratelimit.py 对标）：等一等再试，不硬刷
+      if (effective.controlPerMinute !== limiterPerMinute) {
+        limiter = effective.controlPerMinute > 0 ? new TokenBucketLimiter(effective.controlPerMinute) : null
+        limiterPerMinute = effective.controlPerMinute
+      }
       if (limiter) {
         const waitSec = limiter.take(name)
         if (waitSec > 0) {
-          const message = `设备控制太勤了（每分钟限 ${config.controlPerMinute} 次），约 ${Math.ceil(waitSec)} 秒后再试`
+          const message = `设备控制太勤了（每分钟限 ${effective.controlPerMinute} 次），约 ${Math.ceil(waitSec)} 秒后再试`
           return { ok: false, degraded: message, summary: '先等一下，设备控制得太勤了。' } satisfies Json
         }
       }
