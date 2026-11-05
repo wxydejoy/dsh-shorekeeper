@@ -42,6 +42,7 @@ const config: DeskMiConfig = {
   sensors: [{ name: '卧室', did: 'blt.x' }],
   defaultSensor: '卧室',
   controlEnabled: false,
+  controlPerMinute: 0,
 }
 
 function getTools(bridge = fakeBridge(), cfg = config): ToolDefinition[] {

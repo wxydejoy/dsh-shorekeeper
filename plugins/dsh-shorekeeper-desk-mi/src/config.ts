@@ -16,6 +16,8 @@ export interface DeskMiConfig {
   defaultSensor: string
   /** 控灯写闸门：false 时 desk_mi_light 一律拒绝（红线默认） */
   controlEnabled: boolean
+  /** 设备控制每分钟配额（token bucket，按设备分键）；0 = 不限 */
+  controlPerMinute: number
 }
 
 export const Config = Schema.object({
@@ -30,4 +32,5 @@ export const Config = Schema.object({
     .default([]),
   defaultSensor: Schema.string().description('「屋里多少度」默认传感器名').default('卧室'),
   controlEnabled: Schema.boolean().description('允许米家写入（高危；关闭时 desk_mi_light 一律拒绝）').default(false),
+  controlPerMinute: Schema.number().description('设备控制每分钟配额（按设备分桶；0=不限）').default(10),
 })

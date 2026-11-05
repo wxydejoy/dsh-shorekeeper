@@ -3,6 +3,7 @@
 import { defineTool, type ToolDefinition } from '@deepseek-ai/dsh-tools'
 import type { MiBridge } from './bridge.ts'
 import type { DeskMiConfig } from './config.ts'
+import { TokenBucketLimiter } from './limiter.ts'
 
 type Json = string | number | boolean | null | Json[] | { [key: string]: Json }
 
@@ -32,6 +33,12 @@ function cnClock(d: Date): string {
 export function createDeskMiTools(deps: DeskMiToolDeps): ToolDefinition[] {
   const { bridge, config } = deps
   const now = deps.now ?? (() => new Date())
+
+  // 设备控制限流（hub ratelimit.py 对标）：按设备名分桶，model 爱连发也撞不坏米家
+  const limiter =
+    config.controlPerMinute > 0
+      ? new TokenBucketLimiter(config.controlPerMinute)
+      : null
 
   const deskNow = defineTool({
     name: 'desk_now',
@@ -148,6 +155,14 @@ export function createDeskMiTools(deps: DeskMiToolDeps): ToolDefinition[] {
       }
       if (action === 'brightness' && (typeof args.brightness !== 'number' || args.brightness < 1 || args.brightness > 100)) {
         return { ok: false, degraded: 'brightness 需要 1-100', summary: '亮度要 1 到 100' } satisfies Json
+      }
+      // 限流安全闸（hub ratelimit.py 对标）：等一等再试，不硬刷
+      if (limiter) {
+        const waitSec = limiter.take(name)
+        if (waitSec > 0) {
+          const message = `设备控制太勤了（每分钟限 ${config.controlPerMinute} 次），约 ${Math.ceil(waitSec)} 秒后再试`
+          return { ok: false, degraded: message, summary: '先等一下，设备控制得太勤了。' } satisfies Json
+        }
       }
       // 提速②：单进程 light_set（设备解析+在线检查+属性挑选+写入一次完成），省 2 次云设备列表往返
       const result = await bridge.lightSet(name, action as 'on' | 'off' | 'brightness', typeof args.brightness === 'number' ? args.brightness : undefined)
