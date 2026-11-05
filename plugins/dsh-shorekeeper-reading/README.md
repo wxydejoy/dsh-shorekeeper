@@ -1,8 +1,14 @@
 # dsh-shorekeeper-reading
 
-> 状态：**实现中（T5）——阶段一/二完成（导出器 27 测 + 插件 10 测全绿）；听书/字幕/记忆联动 ⏸** · 任务文档：[docs/tasks/T5-reading.md](../../docs/tasks/T5-reading.md)
+> 状态：**阶段一/二完成 + 页面听书面板（2026-11-05）——33 测全绿** · 任务文档：[docs/tasks/T5-reading.md](../../docs/tasks/T5-reading.md)
 
-守岸人的书架：岸亭 `books.py` 的阅读能力在 dsh 里重生——书架管理、阅读进度、听书、摘抄。
+守岸人的书架：岸亭 `books.py` 的阅读能力在 dsh 里重生——书架管理、阅读进度、听书、摘抄，外加网页侧栏「小说朗读」面板。
+
+## 页面听书面板（2026-11-05）
+
+- 侧栏「小说朗读」入口（`client.js` 手写 classic-script bundle，order 43）：书架列表点书开读、正在朗读进度（3s 轮询）、停止/续读、语速 0.75–2.0、定时分钟（0=不限）、keeper-tts 在线灯
+- host 半区 `/reading-panel` RPC（`ctx.connection.rpc.handle`）：`books` / `status` / `play` / `stop`，与工具面共用同一 ListenEngine 实例——页面开的朗读和守岸人「读会儿书」是同一条线程，断点（listen-state.json）天然互通
+- 信封契约对齐 dsh-keeper-console：error.code/message 字符串 + details 必须是对象
 
 ## 实现说明（2026-11-03 · 阶段一/二）
 

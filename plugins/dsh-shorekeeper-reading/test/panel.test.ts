@@ -1,0 +1,148 @@
+/** /reading-panel 面板 RPC 测试：信封契约（error.code/message/details）、
+ * books/status/play/stop 四动作与引擎联动。
+ */
+
+import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { apply } from '../src/index.ts'
+import type { Book, ShelfData } from '../src/shelf.ts'
+
+function makeBook(overrides: Partial<Book>): Book {
+  return {
+    id: 'b-1',
+    title: '测试之书',
+    author: '佚名',
+    status: 'reading',
+    source: 'test',
+    added_at: null,
+    last_read_at: null,
+    finished_at: null,
+    progress: null,
+    ...overrides,
+  }
+}
+
+describe('/reading-panel RPC', () => {
+  let dataDir: string
+  let handlers: Record<string, (action: string, payload: unknown) => Promise<unknown>>
+
+  beforeEach(() => {
+    dataDir = mkdtempSync(join(tmpdir(), 'reading-panel-'))
+    const shelf: ShelfData = {
+      version: 1,
+      books: [
+        makeBook({}),
+        makeBook({ id: 'b-2', title: '没有文件的书', status: 'wishlist', progress: null }),
+        makeBook({
+          id: 'b-3',
+          title: '在盘上的想读',
+          status: 'wishlist',
+          migrated: { book_id: 'b-3', source_file: 'b-3.txt', sha256: null, bytes: null, oversize: false },
+        }),
+      ],
+    }
+    writeFileSync(join(dataDir, 'shelf.json'), JSON.stringify(shelf))
+    writeFileSync(join(dataDir, 'notes.json'), JSON.stringify({ schema_version: 1, notes: [] }))
+    mkdirSync(join(dataDir, 'books-txt'))
+    writeFileSync(join(dataDir, 'books-txt', 'b-3.txt'), '第一句。第二句。第三句。')
+
+    // 全局 fetch 桩：探活路由抛错（=不在线）；合成请求挂起直到 abort（模拟慢合成，
+    // 让 stop 收到 stoppedBy:'user' 而不是抢先的 network error）
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string | URL, init?: RequestInit) => {
+        const target = String(url)
+        if (target.includes('/v1/models')) throw new TypeError('fetch failed')
+        if (target.includes('/v1/stop')) return new Response('{}', { status: 200 })
+        return new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener(
+            'abort',
+            () => reject(Object.assign(new Error('This operation was aborted'), { name: 'AbortError' })),
+            { once: true },
+          )
+        })
+      }),
+    )
+
+    handlers = {}
+    const ctx = {
+      tools: { register: vi.fn() },
+      connection: {
+        rpc: {
+          handle: (channel: string, handler: (action: string, payload: unknown) => Promise<unknown>) => {
+            handlers[channel] = handler
+            return async () => {}
+          },
+        },
+      },
+      logger: () => ({ info: () => {}, warn: () => {}, error: () => {} }),
+    }
+    apply(ctx as never, { dataDir, ttsBaseUrl: 'http://127.0.0.1:1', ttsSpeed: 1.0 })
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
+
+  const call = async (action: string, payload: unknown = {}) =>
+    (await handlers['/reading-panel']?.(action, payload)) as Record<string, unknown>
+
+  it('挂载 /reading-panel 通道', () => {
+    expect(handlers['/reading-panel']).toBeTypeOf('function')
+  })
+
+  it('books：列书架 + 断点 + tts 探活（不在线=false）', async () => {
+    const res = await call('books')
+    expect(res.ok).toBe(true)
+    const value = res.value as { books: Array<Record<string, unknown>>; ttsAlive: boolean; currentId: null }
+    expect(value.books).toHaveLength(3)
+    expect(value.books.map((b) => b.readable)).toEqual([false, false, true])
+    expect(value.ttsAlive).toBe(false)
+    expect(value.currentId).toBeNull()
+  })
+
+  it('play：文件不在盘上 → ok:false + 完整信封', async () => {
+    const res = await call('play', { bookId: 'b-2' })
+    expect(res.ok).toBe(false)
+    const error = res.error as { code: string; message: string; details: object }
+    expect(typeof error.code).toBe('string')
+    expect(error.message).toContain('不在盘上')
+    expect(error.details).toEqual({})
+  })
+
+  it('play：成功开读（想读联动在读）→ status 可查 → stop 收尾', async () => {
+    const started = await call('play', { bookId: 'b-3', speed: 1.5, timerMin: 5 })
+    expect(started.ok).toBe(true)
+    const snap = started.value as { playing: boolean; status: { playing: boolean; title: string } }
+    expect(snap.playing).toBe(true)
+    expect(snap.status.title).toBe('在盘上的想读')
+
+    // shelf.json 状态联动：wishlist → reading
+    const shelf = JSON.parse(await import('node:fs/promises').then((fs) => fs.readFile(join(dataDir, 'shelf.json'), 'utf-8'))) as ShelfData
+    expect(shelf.books.find((b) => b.id === 'b-3')?.status).toBe('reading')
+
+    const stopped = await call('stop')
+    expect(stopped.ok).toBe(true)
+    const stopSnap = stopped.value as { playing: boolean; status: { stoppedBy: string } | null }
+    expect(stopSnap.playing).toBe(false)
+    expect(stopSnap.status?.stoppedBy).toBe('user')
+  }, 15_000)
+
+  it('play：重复开读 → 报错文案', async () => {
+    await call('play', { bookId: 'b-3' })
+    const res = await call('play', { bookId: 'b-3' })
+    expect(res.ok).toBe(false)
+    expect((res.error as { message: string }).message).toContain('先停止')
+    await call('stop')
+  }, 15_000)
+
+  it('未知动作 → bad_action 信封', async () => {
+    const res = await call('nope')
+    expect(res.ok).toBe(false)
+    expect((res.error as { code: string }).code).toBe('bad_action')
+  })
+})

@@ -33,7 +33,7 @@
 
 ### dsh-shorekeeper-reading —— 阅读与听书
 
-**功能**：书架/进度/笔记/问书工具（`reading.shelf / progress / note / ask`）+ 听书三件（`reading.listen / stop / resume`，直连 keeper-tts 服务端喇叭播放）。
+**功能**：书架/进度/笔记/问书工具（`reading.shelf / progress / note / ask`）+ 听书三件（`reading.listen / stop / resume`，直连 keeper-tts 服务端喇叭播放）+ **网页侧栏「小说朗读」面板**（2026-11-05：client.js + `/reading-panel` RPC，books/status/play/stop，与工具面共用同一 ListenEngine，断点互通；语速/定时可调）。
 
 **依赖链**：数据目录与 migration/export_books.py 落点一致；听书走 keeper-tts :18100。
 

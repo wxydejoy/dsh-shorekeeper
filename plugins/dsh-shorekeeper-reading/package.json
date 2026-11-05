@@ -1,13 +1,30 @@
 {
   "name": "dsh-shorekeeper-reading",
   "version": "0.1.0",
-  "description": "守岸人的阅读：书架、进度、摘抄、听书（岸亭 books.py 重生）",
+  "description": "守岸人的阅读：书架、进度、摘抄、听书（岸亭 books.py 重生）+ 页面小说朗读面板（/reading-panel RPC）",
   "type": "module",
   "license": "MIT",
   "engines": {
     "dsh": ">=0.2.1-rc.5 <0.3"
   },
   "main": "./src/index.ts",
+  "exports": {
+    ".": {
+      "default": "./src/index.ts"
+    },
+    "./client": {
+      "default": "./client.js"
+    }
+  },
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-connection"
+      ]
+    }
+  },
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
