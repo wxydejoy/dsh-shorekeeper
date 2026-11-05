@@ -121,3 +121,35 @@ export function buildReadChunks(text: string, target = PACK_TARGET, limit = PACK
   }
   return result
 }
+
+// ------------------------------------------------------------------ 章节 --
+
+/** 章节标题行：第 X 章/节/卷/回/部/集，或常见特殊章名（序章/楔子/终章等）。 */
+const CHAPTER_LINE =
+  /^[ \t　]*((?:第[0-9０-９零一二三四五六七八九十百千万两]+[章节卷回部集]|Chapter\s+\d+|序章|楔子|引子|前言|后记|尾声|终章|番外)[^\n]{0,60})[ \t　]*$/gim
+
+/** 章节标记：start/end 是原文 char offset（与 ReadChunk 同基准），可直达 buildReadChunks 坐标。 */
+export interface ChapterMark {
+  index: number
+  title: string
+  start: number
+  end: number
+}
+
+/** 章节扫描：按行首标题行切分。命中 <2 视为无章节结构（返回 []）。 */
+export function findChapters(text: string): ChapterMark[] {
+  const hits: Array<{ title: string; start: number }> = []
+  CHAPTER_LINE.lastIndex = 0
+  for (let m = CHAPTER_LINE.exec(text); m !== null; m = CHAPTER_LINE.exec(text)) {
+    hits.push({ title: (m[1] ?? '').trim().slice(0, 60), start: m.index })
+    // 防御零宽匹配死循环（正则可匹配空串时）
+    if (m[0] === '') CHAPTER_LINE.lastIndex++
+  }
+  if (hits.length < 2) return []
+  return hits.map((hit, i) => ({
+    index: i,
+    title: hit.title,
+    start: hit.start,
+    end: i + 1 < hits.length ? (hits[i + 1]?.start ?? text.length) : text.length,
+  }))
+}

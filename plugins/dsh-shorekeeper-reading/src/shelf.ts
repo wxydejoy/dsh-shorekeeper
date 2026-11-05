@@ -4,7 +4,7 @@
  * progress 是书对象里的嵌套结构，不是旁路文件），之后由本插件接管读写。
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
 export interface BookProgress {
@@ -155,6 +155,11 @@ export class ShelfStore {
     return null
   }
 
+  /** 可读性轻量检查（只看文件存在，不读内容——面板轮询用，别把整本书拽进内存）。 */
+  hasBookText(book: Book): boolean {
+    return this.bookTextPath(book) !== null
+  }
+
   /** 读书全文（听书切块用）。文件缺失/未迁移返回 null，由调用方走降级文案。 */
   readBookText(book: Book): string | null {
     const path = this.bookTextPath(book)
@@ -178,6 +183,27 @@ export class ShelfStore {
     )
     const books = this.shelf.books.filter((book) => hit(book.title) || hit(book.author ?? ''))
     return { notes, books }
+  }
+
+  /** 导入新书：id 冲突报错；落盘与 shelf.json 由调用方配合完成（这里只入库 + persist）。 */
+  addBook(book: Book): Book {
+    if (this.shelf.books.some((existing) => existing.id === book.id)) {
+      throw new Error(`书架已有同名书：${book.id}`)
+    }
+    this.shelf.books.push(book)
+    this.persist()
+    return book
+  }
+
+  /** 书全文文件修改时间（章节缓存失效用）；文件缺失返回 0。 */
+  bookTextMtime(book: Book): number {
+    const path = this.bookTextPath(book)
+    if (!path) return 0
+    try {
+      return Math.floor(statSync(path).mtimeMs)
+    } catch {
+      return 0
+    }
   }
 
   private persist(): void {

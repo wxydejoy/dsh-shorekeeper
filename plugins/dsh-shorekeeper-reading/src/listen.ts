@@ -160,11 +160,18 @@ export class ListenEngine {
     }
   }
 
-  /** 开读（从断点或 0）。已在播放时返回 false。deadlineAt=绝对到期毫秒（测试/冻结剩余时长用）。 */
-  start(book: Book, options: { timerMin?: number; speed?: number; deadlineAt?: number } = {}): boolean {
+  /** 开读（从断点或 0）。已在播放时返回 false。deadlineAt=绝对到期毫秒（测试/冻结剩余时长用）。
+   *  fromOffset=显式起播坐标（章节选择用）：先落盘断点再起播，覆盖已有断点。 */
+  start(
+    book: Book,
+    options: { timerMin?: number; speed?: number; deadlineAt?: number; fromOffset?: number } = {},
+  ): boolean {
     if (this.loop) return false
     const text = this.store.readBookText(book)
     if (text === null) throw new Error(`书文件不在盘上（未迁移或被移动）：${ListenState.bookKey(book)}`)
+    if (options.fromOffset !== undefined) {
+      this.state.setOffset(book, Math.max(0, Math.min(text.length, Math.floor(options.fromOffset))))
+    }
     const speed = clampSpeed(options.speed ?? this.speedDefault)
     const timerMin = options.timerMin ?? this.state.timerMin
     if (options.timerMin !== undefined) this.state.setTimerMin(timerMin)

@@ -4,7 +4,8 @@
 // addressed by the same id. All data comes from this package's host half over
 // the /reading-panel RPC channel — no model round-trip anywhere.
 //
-// Sections: 正在朗读（进度 + 停止）· 书架（点书开读 / 续读）· 播放设置（语速 / 定时）。
+// Sections: 正在朗读（进度 + 停止）· 书架（点书续读 / 目录选章 / 导入 txt）
+// · 播放设置（语速 / 定时 / 系统音量）。
 // 断点与守岸人对话侧（reading.listen / reading.stop 工具）同一条引擎、同一份
 // listen-state.json，两边互通。
 //
@@ -24,17 +25,30 @@ window.__ModuleLoader__.load({
       panelName: ['小说朗读', 'Book Reading'],
       refresh: ['刷新', 'Refresh'],
       loading: ['读取中…', 'Loading…'],
-      emptyShelf: ['书架还是空的（把 txt 交给守岸人收录）', 'The shelf is empty'],
+      emptyShelf: ['书架还是空的——把 txt 拖进下面「导入」', 'The shelf is empty — import a txt below'],
       groupNow: ['正在朗读', 'Now playing'],
       groupShelf: ['书架', 'Shelf'],
+      groupImport: ['导入 txt', 'Import txt'],
       groupSetup: ['播放设置', 'Playback'],
       idle: ['没在朗读', 'Idle'],
       resumeFrom: ['断点：约 %d 字处', 'Resume at ~%d chars'],
       noResume: ['还没有断点，从书架挑一本吧', 'No bookmark yet; pick a book below'],
       stop: ['停止', 'Stop'],
       play: ['开读', 'Play'],
+      chapters: ['目录', 'Chapters'],
+      chaptersNone: ['（没扫出章节结构，只能按断点/从头读）', '(no chapter structure found)'],
+      chaptersLoading: ['目录加载中…', 'Loading chapters…'],
+      chapterPlay: ['从这章读', 'Read from here'],
+      chapterCurrent: ['当前断点在这里', 'bookmark is here'],
+      chapterFromStart: ['从头开始（第 1 章前）', 'From the beginning'],
       speed: ['语速', 'Speed'],
       timer: ['定时（分钟，0 = 不限）', 'Timer (min, 0 = unlimited)'],
+      timerHint: ['只在本次开读生效，不再沿用上次定时', 'Applies to this play only; no silent carry-over'],
+      volume: ['系统音量', 'System volume'],
+      muted: ['静音', 'Mute'],
+      importPick: ['选 txt 文件导入', 'Pick a txt file'],
+      importing: ['导入中…', 'Importing…'],
+      importHint: ['支持 UTF-8 / GBK，上限 15MB；导入后出现在书架', 'UTF-8 / GBK, up to 15MB'],
       chunk: ['第 %d / %d 段', 'Chunk %d / %d'],
       readTo: ['已读约 %d 字', 'Read ~%d chars'],
       unreadable: ['书文件不在盘上', 'Text file missing'],
@@ -44,7 +58,6 @@ window.__ModuleLoader__.load({
       tts: ['本地克隆音色服务 (keeper-tts)', 'Local voice service (keeper-tts)'],
       online: ['在线', 'online'],
       offline: ['离线', 'offline'],
-      lastStop: ['上次停在哪：', 'Last stop:'],
       byUser: ['手动停止', 'stopped by you'],
       byTimer: ['到点自动停', 'timer elapsed'],
       byEnd: ['读完了', 'reached the end'],
@@ -82,13 +95,16 @@ window.__ModuleLoader__.load({
 .dsh-reading-book:hover{background:var(--dsw-alias-bg-hover, rgba(127,127,127,.12))}
 .dsh-reading-book-active{background:var(--dsw-alias-bg-hover, rgba(127,127,127,.12))}
 .dsh-reading-book-active .dsh-reading-name{color:var(--dsw-alias-brand-primary)}
+.dsh-reading-chapters{margin:6px 0 2px;padding:8px;border:1px dashed var(--dsw-alias-border-l1);border-radius:6px}
+.dsh-reading-select{border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);border-radius:6px;padding:4px 6px;font-size:12px;max-width:100%}
 .dsh-reading-input{width:76px;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);border-radius:6px;padding:4px 8px;font-size:12px}
-.dsh-reading-select{border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);border-radius:6px;padding:4px 6px;font-size:12px}
+.dsh-reading-range{flex:1;accent-color:var(--dsw-alias-brand-primary)}
 .dsh-reading-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:middle}
 .dsh-reading-msg{color:var(--dsw-alias-label-secondary);font-size:12px;margin-left:8px}
 .dsh-reading-progress{height:4px;border-radius:2px;background:var(--dsw-alias-border-l1);overflow:hidden;margin:8px 0 2px}
 .dsh-reading-progress>div{height:100%;background:var(--dsw-alias-brand-primary);border-radius:2px;transition:width .6s}
 .dsh-reading-error{border:1px solid var(--dsw-alias-state-error-primary);color:var(--dsw-alias-state-error-primary);border-radius:6px;padding:8px 10px;margin-bottom:12px;white-space:pre-wrap;word-break:break-word}
+.dsh-reading-file{font-size:12px;color:var(--dsw-alias-label-secondary)}
 `
 
     // -------------------------------------------------------- panel icon --
@@ -156,6 +172,77 @@ window.__ModuleLoader__.load({
       return bits.join(' · ')
     }
 
+    function bytesToBase64(bytes) {
+      let binary = ''
+      const CHUNK = 0x8000
+      for (let i = 0; i < bytes.length; i += CHUNK) {
+        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK))
+      }
+      return btoa(binary)
+    }
+
+    // ----------------------------------------------------------- pieces --
+
+    function ChapterPicker({ book, call, busy, onPlayChapter }) {
+      const [chapters, setChapters] = useState(null)
+      const [pick, setPick] = useState('')
+      const load = useCallback(async () => {
+        try {
+          const value = await call('chapters', { bookId: book.id })
+          setChapters(value)
+        } catch (e) {
+          setChapters({ total: 0, chapters: [], error: String((e && e.message) || e) })
+        }
+      }, [call, book.id])
+
+      useEffect(() => {
+        void load()
+      }, [load])
+
+      if (!chapters) return h('div', { className: 'dsh-reading-hint' }, tr('chaptersLoading'))
+      if (chapters.error) return h('div', { className: 'dsh-reading-hint' }, chapters.error)
+      if (!chapters.total) return h('div', { className: 'dsh-reading-hint' }, tr('chaptersNone'))
+
+      // 默认选中：断点所在章
+      const defaultIdx = chapters.chapters.findIndex((c) => book.offset >= c.start && book.offset < c.end)
+      const effective = pick !== '' ? Number(pick) : defaultIdx >= 0 ? defaultIdx : -1
+
+      return h(
+        'div',
+        { className: 'dsh-reading-chapters' },
+        h(
+          'div',
+          { style: { display: 'flex', alignItems: 'center', gap: 8 } },
+          h(
+            'select',
+            {
+              className: 'dsh-reading-select',
+              value: String(effective),
+              onChange: (e) => setPick(e.target.value),
+              style: { flex: 1 },
+            },
+            h('option', { value: '-1' }, tr('chapterFromStart')),
+            chapters.chapters.map((c) =>
+              h('option', { key: c.index, value: String(c.index) }, c.title || '第 ' + (c.index + 1) + ' 节'),
+            ),
+          ),
+          h(
+            'button',
+            {
+              className: 'dsh-reading-btn dsh-reading-btn-primary',
+              disabled: busy,
+              onClick: () => {
+                const ch = effective >= 0 ? chapters.chapters[effective] : null
+                onPlayChapter(ch ? ch.start : 0)
+              },
+            },
+            tr('chapterPlay'),
+          ),
+        ),
+        h('div', { className: 'dsh-reading-hint', style: { marginTop: 4 } }, chapters.total + ' 章'),
+      )
+    }
+
     // --------------------------------------------------------------- panel --
 
     function ReadingPanel({ call }) {
@@ -164,7 +251,12 @@ window.__ModuleLoader__.load({
       const [busy, setBusy] = useState(false)
       const [speed, setSpeed] = useState(1.0)
       const [timerDraft, setTimerDraft] = useState(null)
+      const [expandedBook, setExpandedBook] = useState(null)
+      const [importing, setImporting] = useState(false)
+      const [volumeState, setVolumeState] = useState(null)
+      const [volumeDraft, setVolumeDraft] = useState(null)
       const aliveRef = useRef(true)
+      const fileRef = useRef(null)
 
       const load = useCallback(async () => {
         try {
@@ -181,6 +273,9 @@ window.__ModuleLoader__.load({
       useEffect(() => {
         aliveRef.current = true
         void load()
+        void call('volume', {}).then((v) => {
+          if (aliveRef.current && v) setVolumeState(v)
+        }).catch(() => {})
         const timer = setInterval(() => {
           if (document.visibilityState === 'visible') void load()
         }, 3000)
@@ -188,7 +283,7 @@ window.__ModuleLoader__.load({
           aliveRef.current = false
           clearInterval(timer)
         }
-      }, [load])
+      }, [load, call])
 
       const run = useCallback(
         async (action, payload) => {
@@ -196,9 +291,11 @@ window.__ModuleLoader__.load({
           setError('')
           try {
             const value = await call(action, payload)
-            if (aliveRef.current && value) setSnap(value)
+            if (aliveRef.current && value && (action === 'play' || action === 'stop')) setSnap((prev) => value)
+            return value
           } catch (e) {
             if (aliveRef.current) setError(String((e && e.message) || e))
+            return null
           } finally {
             if (aliveRef.current) setBusy(false)
           }
@@ -207,14 +304,69 @@ window.__ModuleLoader__.load({
       )
 
       const play = useCallback(
-        (bookId) => {
+        async (bookId, fromOffset) => {
           const payload = { speed }
-          const timer = timerDraft != null && timerDraft !== '' ? Number(timerDraft) : null
-          if (timer !== null && Number.isFinite(timer)) payload.timerMin = Math.max(0, Math.floor(timer))
+          const timer = timerDraft != null && timerDraft !== '' ? Number(timerDraft) : 0
+          payload.timerMin = Number.isFinite(timer) ? Math.max(0, Math.floor(timer)) : 0
           if (bookId) payload.bookId = bookId
-          void run('play', payload)
+          if (typeof fromOffset === 'number') payload.fromOffset = fromOffset
+          // 朗读中换书/换章：先停再读（host 会拒绝播放中的 play）
+          if (snap && snap.status && snap.status.playing) await run('stop', {})
+          const ok = await run('play', payload)
+          if (ok) void load()
         },
-        [run, speed, timerDraft],
+        [run, speed, timerDraft, snap, load],
+      )
+
+      const toggleChapters = useCallback(
+        (bookId) => {
+          setExpandedBook((prev) => (prev === bookId ? null : bookId))
+        },
+        [],
+      )
+
+      const applyVolume = useCallback(
+        async (value) => {
+          setVolumeDraft(null)
+          setVolumeState((prev) => ({ ...(prev || {}), volume: value }))
+          try {
+            const v = await call('setVolume', { volume: value })
+            if (v && aliveRef.current) setVolumeState(v)
+          } catch (e) {
+            if (aliveRef.current) setError(String((e && e.message) || e))
+          }
+        },
+        [call],
+      )
+
+      const toggleMuted = useCallback(async () => {
+        const next = !(volumeState && volumeState.muted)
+        setVolumeState((prev) => ({ volume: (prev && prev.volume) || 50, muted: next }))
+        try {
+          const v = await call('setMuted', { muted: next })
+          if (v && aliveRef.current) setVolumeState((prev) => ({ ...(prev || {}), ...v }))
+        } catch (e) {
+          if (aliveRef.current) setError(String((e && e.message) || e))
+        }
+      }, [call, volumeState])
+
+      const onImportFile = useCallback(
+        async (file) => {
+          if (!file) return
+          setImporting(true)
+          setError('')
+          try {
+            const bytes = new Uint8Array(await file.arrayBuffer())
+            await call('import', { name: file.name, dataBase64: bytesToBase64(bytes) })
+            await load()
+          } catch (e) {
+            if (aliveRef.current) setError('导入失败：' + String((e && e.message) || e))
+          } finally {
+            if (aliveRef.current) setImporting(false)
+            if (fileRef.current) fileRef.current.value = ''
+          }
+        },
+        [call, load],
       )
 
       if (!snap) {
@@ -235,7 +387,8 @@ window.__ModuleLoader__.load({
       const playing = !!(snap.status && snap.status.playing)
       const progress = statusMeta(snap)
       const resume = snap.resume
-      const timerValue = timerDraft != null ? timerDraft : String(snap.timerMin ?? 0)
+      const timerValue = timerDraft != null ? timerDraft : '0'
+      const volume = volumeDraft != null ? volumeDraft : volumeState ? volumeState.volume : 50
 
       return h(
         'div',
@@ -274,7 +427,7 @@ window.__ModuleLoader__.load({
                     {
                       className: 'dsh-reading-btn dsh-reading-btn-primary',
                       disabled: busy,
-                      onClick: () => play(null),
+                      onClick: () => void play(null),
                     },
                     tr('play'),
                   )
@@ -295,35 +448,80 @@ window.__ModuleLoader__.load({
             : snap.books.map((book) =>
                 h(
                   'div',
-                  {
-                    key: book.id,
-                    className:
-                      'dsh-reading-book dsh-reading-row' +
-                      (playing && snap.status.bookId === book.id ? ' dsh-reading-book-active' : ''),
-                    onClick: () => {
-                      if (!busy) play(book.id)
-                    },
-                  },
+                  { key: book.id },
                   h(
                     'div',
-                    { className: 'dsh-reading-label' },
-                    h('div', { className: 'dsh-reading-name' }, book.title),
-                    h('div', { className: 'dsh-reading-hint' }, bookSubtitle(book)),
-                  ),
-                  h(
-                    'button',
                     {
-                      className: 'dsh-reading-btn',
-                      disabled: busy,
-                      onClick: (e) => {
-                        e.stopPropagation()
-                        play(book.id)
+                      className:
+                        'dsh-reading-book dsh-reading-row' +
+                        (playing && snap.status.bookId === book.id ? ' dsh-reading-book-active' : ''),
+                      onClick: () => {
+                        if (!busy) void play(book.id)
                       },
                     },
-                    tr('play'),
+                    h(
+                      'div',
+                      { className: 'dsh-reading-label' },
+                      h('div', { className: 'dsh-reading-name' }, book.title),
+                      h('div', { className: 'dsh-reading-hint' }, bookSubtitle(book)),
+                    ),
+                    h(
+                      'button',
+                      {
+                        className: 'dsh-reading-btn',
+                        disabled: busy,
+                        onClick: (e) => {
+                          e.stopPropagation()
+                          toggleChapters(book.id)
+                        },
+                      },
+                      tr('chapters'),
+                    ),
+                    h(
+                      'button',
+                      {
+                        className: 'dsh-reading-btn',
+                        disabled: busy,
+                        onClick: (e) => {
+                          e.stopPropagation()
+                          void play(book.id)
+                        },
+                      },
+                      tr('play'),
+                    ),
                   ),
+                  expandedBook === book.id
+                    ? h(ChapterPicker, {
+                        key: 'chapters-' + book.id,
+                        book,
+                        call,
+                        busy,
+                        onPlayChapter: (start) => void play(book.id, start),
+                      })
+                    : null,
                 ),
               ),
+        ),
+
+        // -- 导入 --
+        h(
+          'div',
+          { className: 'dsh-reading-section' },
+          h('div', { className: 'dsh-reading-h' }, tr('groupImport')),
+          h(
+            'div',
+            { className: 'dsh-reading-row' },
+            h('input', {
+              ref: fileRef,
+              type: 'file',
+              accept: '.txt,.text,text/plain',
+              className: 'dsh-reading-file',
+              disabled: importing,
+              onChange: (e) => void onImportFile(e.target.files && e.target.files[0]),
+            }),
+            importing ? h('span', { className: 'dsh-reading-msg' }, tr('importing')) : null,
+          ),
+          h('div', { className: 'dsh-reading-hint' }, tr('importHint')),
         ),
 
         // -- 播放设置 --
@@ -348,7 +546,12 @@ window.__ModuleLoader__.load({
           h(
             'div',
             { className: 'dsh-reading-row' },
-            h('div', { className: 'dsh-reading-label' }, h('div', { className: 'dsh-reading-name' }, tr('timer'))),
+            h(
+              'div',
+              { className: 'dsh-reading-label' },
+              h('div', { className: 'dsh-reading-name' }, tr('timer')),
+              h('div', { className: 'dsh-reading-hint' }, tr('timerHint')),
+            ),
             h('input', {
               className: 'dsh-reading-input',
               type: 'number',
@@ -357,6 +560,30 @@ window.__ModuleLoader__.load({
               value: timerValue,
               onChange: (e) => setTimerDraft(e.target.value),
             }),
+          ),
+          h(
+            'div',
+            { className: 'dsh-reading-row' },
+            h(
+              'div',
+              { className: 'dsh-reading-label' },
+              h('div', { className: 'dsh-reading-name' }, tr('volume') + '：' + volume),
+            ),
+            h('input', {
+              className: 'dsh-reading-range',
+              type: 'range',
+              min: 0,
+              max: 100,
+              value: volume,
+              onChange: (e) => setVolumeDraft(Number(e.target.value)),
+              onMouseUp: (e) => void applyVolume(Number(e.target.value)),
+              onTouchEnd: (e) => void applyVolume(Number(e.target.value)),
+            }),
+            h(
+              'button',
+              { className: 'dsh-reading-btn', onClick: () => void toggleMuted() },
+              (volumeState && volumeState.muted ? '取消静音' : tr('muted')),
+            ),
           ),
           h(
             'div',
