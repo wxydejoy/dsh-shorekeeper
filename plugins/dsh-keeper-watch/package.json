@@ -1,0 +1,37 @@
+{
+  "name": "dsh-keeper-watch",
+  "version": "0.1.0",
+  "description": "守岸人异动提醒：天气突变 / PM2.5 超标 / PC 过热 / 内存压力 / 设备离线 → notify 桥直推微信。三重闸（免打扰/每日配额/同一件事一天一次）从 dock-hub proactive.py 移植。",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "dsh": ">=0.2.1-rc.5 <0.3"
+  },
+  "main": "./src/index.ts",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": false
+    }
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-tools": "0.2.1-rc.5",
+    "@deepseek-ai/schemastery": "^3.18.0",
+    "@deepseek-ai/cordis": "^4.0.5"
+  },
+  "devDependencies": {
+    "@deepseek-ai/dsh-llm": "^0.2.1-rc.5",
+    "@deepseek-ai/dsh-sandbox": "^0.2.1-rc.5",
+    "@deepseek-ai/dsh-scope": "^0.2.1-rc.5",
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}

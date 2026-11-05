@@ -1,0 +1,4 @@
+# dsh-keeper-watch bundle patch：把 host 插件行插进 profile 层
+- insert:
+    - id: dsh-keeper-watch
+      name: 'dsh-keeper-watch'
