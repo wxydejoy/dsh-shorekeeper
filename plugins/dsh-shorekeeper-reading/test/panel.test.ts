@@ -109,11 +109,20 @@ describe('/reading-panel RPC', () => {
   it('books：列书架 + 断点 + tts 探活（不在线=false）', async () => {
     const res = await call('books')
     expect(res.ok).toBe(true)
-    const value = res.value as { books: Array<Record<string, unknown>>; ttsAlive: boolean; currentId: null }
+    const value = res.value as {
+      books: Array<Record<string, unknown>>
+      ttsAlive: boolean
+      currentId: null
+      playing: boolean
+      resume: Record<string, unknown> | null
+    }
     expect(value.books).toHaveLength(4)
     expect(value.books.map((b) => b.readable)).toEqual([false, false, true, true])
     expect(value.ttsAlive).toBe(false)
     expect(value.currentId).toBeNull()
+    // 面板 3s 轮询只调 books——实时引擎状态必须带上，否则别处开的朗读面板看不见
+    expect(value.playing).toBe(false)
+    expect(value.resume).toEqual({ id: 'b-1', title: '测试之书', offset: 0 })
   })
 
   it('play：文件不在盘上 → ok:false + 完整信封', async () => {

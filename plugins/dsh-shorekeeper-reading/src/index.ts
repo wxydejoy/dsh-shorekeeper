@@ -119,7 +119,9 @@ function registerPanelRpc(
         case 'books': {
           const books = store.books.map(bookEntry)
           const alive = await keeperTtsAlive()
-          return { ok: true, value: { books, currentId: state.currentId, timerMin: state.timerMin, ttsAlive: alive } }
+          // 面板 3s 轮询只调 books——必须带上实时引擎状态（playing/status/resume），
+          // 否则「别处开的朗读」（RPC/微信/我这边测试）面板永远显示没在读、没有停止键。
+          return { ok: true, value: { ...statusSnapshot(), books, currentId: state.currentId, timerMin: state.timerMin, ttsAlive: alive } }
         }
 
         case 'status':
