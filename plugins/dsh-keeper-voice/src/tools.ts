@@ -116,5 +116,51 @@ export function createKeeperTools(deps: KeeperToolDeps): ToolDefinition[] {
     },
   })
 
-  return [status, voiceTest, stop]
+  // F31 白噪音（helper desk/companion_desk._run_noise 对标）：雨声/海浪/风扇/白噪音，到点自动淡出
+  const NOISE_LABELS: Record<string, string> = { rain: '雨声', waves: '海浪', fan: '风扇', brown: '白噪音' }
+
+  const noise = defineTool({
+    name: 'keeper.noise',
+    description:
+      '放/停白噪音（本机喇叭）：雨声/海浪/风扇/白噪音，到点自动淡出（默认 30 分钟，最长 180）。适合「放点白噪音」「雨声助眠」「把声音停了」。写 off 或不传 name 就是停。',
+    parameters: {
+      name: { type: 'string', enum: ['rain', 'waves', 'fan', 'brown', 'off'], description: 'rain=雨声 waves=海浪 fan=风扇 brown=白噪音；off=停' },
+      minutes: { type: 'number', description: '放多久（分钟），1-180；缺省 30' },
+    },
+    output: {
+      schema: { type: 'json' },
+      render: (_args, value) => [{ type: 'text', text: summaryOf(value) }],
+    },
+    async execute(args) {
+      try {
+        const raw = typeof args.name === 'string' ? args.name.trim().toLowerCase() : ''
+        const name = (['rain', 'waves', 'fan', 'brown', 'off'].includes(raw) ? raw : '') as 'rain' | 'waves' | 'fan' | 'brown' | 'off' | ''
+        if (!name) {
+          return { ok: false, degraded: 'name 要填 rain/waves/fan/brown/off', summary: '参数不对' } satisfies Json
+        }
+        const minutes = typeof args.minutes === 'number' && args.minutes >= 1 && args.minutes <= 180 ? Math.round(args.minutes) : undefined
+        if (name === 'off') {
+          await client.noise('off')
+          return { ok: true, name: 'off', summary: '白噪音停了。' } satisfies Json
+        }
+        const state = await client.noise(name, minutes)
+        if (!state.ok) {
+          return { ok: false, degraded: '白噪音没放成', summary: '这次没动成。' } satisfies Json
+        }
+        const label = NOISE_LABELS[name] ?? '白噪音'
+        const mins = state.minutes ?? minutes ?? 30
+        return {
+          ok: true,
+          name,
+          minutes: mins,
+          seconds_left: state.seconds_left ?? 0,
+          summary: `${label}放上了，${mins} 分钟后自己淡出。`,
+        } satisfies Json
+      } catch (error) {
+        return degrade(error) satisfies Json
+      }
+    },
+  })
+
+  return [status, voiceTest, stop, noise]
 }

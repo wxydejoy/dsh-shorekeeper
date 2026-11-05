@@ -95,6 +95,20 @@ export class KeeperClient {
     await this.request('POST', '/v1/stop', { body: {}, timeoutMs: this.timeouts.stop })
   }
 
+  /** F31 白噪音状态（GET /v1/noise） */
+  async noiseStatus(): Promise<{ ok: boolean; playing: boolean; name: string | null; seconds_left: number; minutes: number }> {
+    return this.request('GET', '/v1/noise', { timeoutMs: this.timeouts.stop, auth: false })
+  }
+
+  /** F31 白噪音：放/停。name=off 即停；到点她自动淡出（FADE_SEC 45s），不用再喊一声。
+   *  和音乐共用喇叭，谁后到谁说了算（服务端自己 stop 对方）。 */
+  async noise(name: 'rain' | 'waves' | 'fan' | 'brown' | 'off', minutes?: number): Promise<{ ok: boolean; name: string | null; minutes: number; seconds_left: number }> {
+    return this.request('POST', '/v1/noise', {
+      body: { name, ...(minutes !== undefined ? { minutes } : {}) },
+      timeoutMs: 10_000,
+    })
+  }
+
   private async request<T>(
     method: 'GET' | 'POST',
     path: string,

@@ -7,6 +7,7 @@ export interface MockKeeper {
   url: string
   speechRequests: { input: string; speed?: number; format?: string }[]
   stopped: number
+  noiseRequests: { name: string; minutes?: number }[]
   ready: boolean
   /** 让 /v1/audio/speech 抛 InterruptedError → 502 stopped */
   interrupt: boolean
@@ -21,6 +22,7 @@ export function createMockKeeper(options: { port?: number; ready?: boolean; wav?
   const state = {
     speechRequests: [] as { input: string; speed?: number; format?: string }[],
     stopped: 0,
+    noiseRequests: [] as { name: string; minutes?: number }[],
     ready: options.ready ?? true,
     interrupt: false,
     hang: false,
@@ -58,6 +60,19 @@ export function createMockKeeper(options: { port?: number; ready?: boolean; wav?
     if (path === '/v1/stop' && request.method === 'POST') {
       state.stopped += 1
       respond(response, 200, { ok: true, stopped: true })
+      return
+    }
+    if (path === '/v1/noise' && request.method === 'GET') {
+      respond(response, 200, { ok: true, playing: false, name: null, seconds_left: 0, minutes: 0 })
+      return
+    }
+    if (path === '/v1/noise' && request.method === 'POST') {
+      const name = String(body.name ?? 'off')
+      const minutes = typeof body.minutes === 'number' ? body.minutes : undefined
+      if (minutes !== undefined) state.noiseRequests.push({ name, minutes })
+      else state.noiseRequests.push({ name })
+      const mins = minutes ?? 30
+      respond(response, 200, { ok: true, name: name === 'off' ? null : name, minutes: mins, seconds_left: mins * 60 })
       return
     }
     if (path === '/v1/audio/speech' && request.method === 'POST') {
@@ -123,6 +138,9 @@ export function createMockKeeper(options: { port?: number; ready?: boolean; wav?
         url: `http://127.0.0.1:${port}`,
         get speechRequests() {
           return state.speechRequests
+        },
+        get noiseRequests() {
+          return state.noiseRequests
         },
         get stopped() {
           return state.stopped

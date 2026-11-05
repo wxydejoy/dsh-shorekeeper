@@ -2,6 +2,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { KeeperClient, KeeperRequestError } from '../src/keeper-client.ts'
 import { createKeeperTools } from '../src/tools.ts'
 import { createMockKeeper, type MockKeeper } from './mock-keeper.ts'
+import type { ToolRunContext } from '@deepseek-ai/dsh-tools'
+
+/** execute 的第二参（ToolRunContext）在本插件实现里不使用，测试传 null 即可。 */
+const exec = null as unknown as ToolRunContext
 
 let mock: MockKeeper
 
@@ -150,3 +154,33 @@ describe('keeper 工具面', () => {
 })
 
 void KeeperRequestError
+
+describe('keeper.noise（F31 白噪音）', () => {
+  it('放雨声：透传 name 与 minutes，summary 带时长', async () => {
+    const tool = byName('keeper.noise')
+    const result = (await tool.execute({ name: 'rain', minutes: 45 }, exec)) as { ok: boolean; summary: string }
+    expect(result.ok).toBe(true)
+    expect(result.summary).toContain('45 分钟')
+    expect(mock.noiseRequests).toEqual([{ name: 'rain', minutes: 45 }])
+  })
+
+  it('缺省 minutes：服务端默认 30', async () => {
+    const tool = byName('keeper.noise')
+    const result = (await tool.execute({ name: 'brown' }, exec)) as { ok: boolean; minutes: number }
+    expect(result.ok).toBe(true)
+    expect(result.minutes).toBe(30)
+  })
+
+  it('off：停下', async () => {
+    const tool = byName('keeper.noise')
+    const result = (await tool.execute({ name: 'off' }, exec)) as { ok: boolean; summary: string }
+    expect(result.ok).toBe(true)
+    expect(mock.noiseRequests).toEqual([{ name: 'off', minutes: undefined }])
+  })
+
+  it('乱填 name：schema 枚举先拦，不打服务', async () => {
+    const tool = byName('keeper.noise')
+    await expect(tool.execute({ name: 'ocean' }, exec)).rejects.toThrow(/rain/)
+    expect(mock.noiseRequests).toHaveLength(0)
+  })
+})
