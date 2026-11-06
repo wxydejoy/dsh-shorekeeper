@@ -21,6 +21,9 @@
 - dsh web 的 403 辨认：skip-browser-auth 栅栏按 Host 头判，IP Host 打根路径 `/` 403 属正常（DNS rebinding 防护），API 面（/health、/v1/snapshot 等）不拦。
 - effort 链分层：TUI effort（~/.dsh-tui）只管 TUI 会话；weixin chat 路由只带 provider/model，turn 请求不发 thinking 字段 → 智谱默认**开思考**（微信慢的主因之一）。给微信钉思考：weixin 路由对象加 reasoningEffort（installModelSelection 透传）+ patch 里模型声明 reasoningEfforts。
 - Bash 工具里 `nohup … &` 起的常驻进程会随命令结束被杀；要用 run_in_background: true。launchctl bootstrap 在 agent 沙箱一律被拦。
+- **微信模型路由≠全局默认**：`~/.dsh/weixin/config.json` 的 `chatModel`/`proactiveModel` 优先于 agent-default-model（`routeOverride ?? chatRoute() ?? #route()`）。换模型两边一起改，否则只有网页会话变、微信不动。
+- **scnet 按模型计费**：同 key 下 GLM-5.3-Flash 正常、DeepSeek-V4.1-Flash-1017 报 402 Insufficient Balance——切模型前先 curl 单测目标模型。
+- plist 写死 `--host 10.14.14.117` → 127.0.0.1:3090 必然拒连，API 走 LAN IP，别当回归查。profile 现只剩 `web`（主）+ `headless`（20K 模板）；旧的 hl/reg/b4test 在 `~/.dsh/_removed-profiles-2026-11-06/`（含 configs.tar.gz）。
 
 ## 夜班 zcode（2026-11-05）新增
 - **pnpm patch 会冲 node_modules**：`pnpm patch <pkg>` 是从 registry 重拉 pristine 覆盖安装副本（不是复制现状）——直改的 node_modules 补丁要先存档再 patch；patch 会话（.pnpm_patches）commit 前一直保留，可继续编辑再 patch-commit。已固化的 patchedDependencies 在 pnpm-workspace.yaml（pnpm 11 不写 package.json）。
