@@ -18,7 +18,7 @@
 - launchctl bootstrap/load/submit 在 WorkBuddy 进程里一律 error 5（非沙箱问题，非沙箱通道也拒）——**走 ssh 回环**：`ssh localhost 'launchctl bootstrap gui/501 <plist>'`（sshd 已开、id_rsa 已进 authorized_keys，2026-11-04 实证）。
 - launchd 服务 plist 必须显式给 EnvironmentVariables.PATH=/opt/homebrew/bin:...（默认 PATH 找不到 node，`#!/usr/bin/env node` 起不来）。
 - :3090 实例已由 launchd `cn.weiekko.dsh-web` 常驻（RunAtLoad+KeepAlive，kill -9 自愈实证）；重启口令：ssh localhost 'launchctl bootout gui/501/cn.weiekko.dsh-web; launchctl bootstrap gui/501 ~/Library/LaunchAgents/cn.weiekko.dsh-web.plist'。
-- dsh web 的 403 辨认：skip-browser-auth 栅栏按 Host 头判，IP Host 打根路径 `/` 403 属正常（DNS rebinding 防护），API 面（/health、/v1/snapshot 等）不拦。
+- dsh web 的 403 辨认：skip-browser-auth 栅栏按 Host 头判，IP Host 打根路径 `/` 403 属正常（DNS rebinding 防护），API 面（/health、/v1/snapshot 等）不拦。**新设备激活（2026-11-13 实测）**：开 `http://10.14.14.117:3090/?token=<…>` 一次性种 30 天 cookie（Max-Age 2592000），之后裸开 `/` 即可；cookie 扛 dsh 重启（签名密钥在盘上），但 **?token= 每次重启轮换**（旧 token 401）——加新设备前抓最新一条：`grep -o "token=[A-Za-z0-9_-]*" ~/.dsh/logs/dsh-web.out.log | tail -1`。401 body 是纯文本无登录表单，没法贴 token，只能开完整 URL。语音（getUserMedia）在非 localhost 的纯 HTTP 上浏览器不给开，新设备无麦克风/插话，Mac 本机走 127.0.0.1:3091 转发才有安全上下文。
 - effort 链分层：TUI effort（~/.dsh-tui）只管 TUI 会话；weixin chat 路由只带 provider/model，turn 请求不发 thinking 字段 → 智谱默认**开思考**（微信慢的主因之一）。给微信钉思考：weixin 路由对象加 reasoningEffort（installModelSelection 透传）+ patch 里模型声明 reasoningEfforts。
 - Bash 工具里 `nohup … &` 起的常驻进程会随命令结束被杀；要用 run_in_background: true。launchctl bootstrap 在 agent 沙箱一律被拦。
 - **微信模型路由≠全局默认**：`~/.dsh/weixin/config.json` 的 `chatModel`/`proactiveModel` 优先于 agent-default-model（`routeOverride ?? chatRoute() ?? #route()`）。换模型两边一起改，否则只有网页会话变、微信不动。
