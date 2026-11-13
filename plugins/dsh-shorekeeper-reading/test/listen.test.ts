@@ -11,6 +11,7 @@ import {
   chunkReadText,
   cutSentences,
   estimateReadSeconds,
+  openReadCursor,
   packReadChunks,
 } from '../src/speech.ts'
 import { ListenEngine, ListenState } from '../src/listen.ts'
@@ -63,6 +64,31 @@ describe('切句与打包（books-format §4 边界）', () => {
 
   it('estimateReadSeconds = 口播字数 / 4.0', () => {
     expect(estimateReadSeconds('一二三四五')).toBe(1.25)
+  })
+
+  it('openReadCursor：按需切段，文本序列与整书打包一致，不先扫完后文', () => {
+    const samples = [
+      '甲乙丙丁。戊己庚辛。',
+      '这是一段足够长的话，用来撑出多个朗读块。'.repeat(6),
+      '德行第一。陈仲举言为士则，行为世范，登车揽辔，有澄清天下之志。为豫章太守，至，便问徐孺子所在，望之俨然，即之也温。仲尼居，曾子侍。子曰：先王有至德要道，以顺天下，民用和睦。',
+      '长'.repeat(60) + '，结尾。',
+    ]
+    for (const text of samples) {
+      const cursor = openReadCursor(text, 0)
+      const got: string[] = []
+      for (;;) {
+        const chunk = cursor.next()
+        if (!chunk) break
+        got.push(chunk.text)
+        expect(chunk.end).toBeGreaterThan(chunk.start)
+      }
+      expect(got).toEqual(packReadChunks(text))
+    }
+    const long = '一二三四五六七八，'.repeat(4000)
+    const t0 = Date.now()
+    const first = openReadCursor(long, 0).next()
+    expect(Date.now() - t0).toBeLessThan(200)
+    expect(first?.text).toBe(packReadChunks(long)[0])
   })
 
   it('buildReadChunks：offset 与原文坐标对齐（短句按 target 合并是一块）', () => {
@@ -308,9 +334,9 @@ describe('听书工具面', () => {
     return tool
   }
 
-  it('reading.listen：未知书降级、书文件缺失降级', async () => {
+  it('reading_listen：未知书降级、书文件缺失降级', async () => {
     const h = harness()
-    const listen = toolOf(h, 'reading.listen')
+    const listen = toolOf(h, 'reading_listen')
     const missing = (await listen.execute({ book: '不存在的书' }, {} as never)) as { ok: boolean; degraded: string }
     expect(missing.ok).toBe(false)
     expect(missing.degraded).toContain('没有找到')
@@ -321,23 +347,23 @@ describe('听书工具面', () => {
     expect(noFile.degraded).toContain('不在盘上')
   })
 
-  it('reading.listen → reading.stop：起播即返、停止报断点', async () => {
+  it('reading_listen → reading_stop：起播即返、停止报断点', async () => {
     const h = harness()
     h.blockFirst = true
-    const listen = toolOf(h, 'reading.listen')
+    const listen = toolOf(h, 'reading_listen')
     const started = (await listen.execute({ book: '世说新语' }, {} as never)) as { ok: boolean; summary: string }
     expect(started.ok).toBe(true)
     expect(started.summary).toContain('世说新语')
     await vi.waitFor(() => expect(h.engine.playing).toBe(true), { timeout: 2000 })
-    const stop = toolOf(h, 'reading.stop')
+    const stop = toolOf(h, 'reading_stop')
     const stopped = (await stop.execute({}, {} as never)) as { ok: boolean; summary: string }
     expect(stopped.ok).toBe(true)
     expect(stopped.summary).toContain('记到')
   })
 
-  it('reading.resume：current_id 优先；没听过则降级', async () => {
+  it('reading_resume：current_id 优先；没听过则降级', async () => {
     const h = harness({ offset: 0 })
-    const resume = toolOf(h, 'reading.resume')
+    const resume = toolOf(h, 'reading_resume')
     // 无 listen-state.json → resumeCandidate 退化为最近在读书（书架里唯一 reading）
     const resumed = (await resume.execute({}, {} as never)) as { ok: boolean }
     expect(resumed.ok).toBe(true)

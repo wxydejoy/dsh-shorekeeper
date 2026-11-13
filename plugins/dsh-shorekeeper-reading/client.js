@@ -6,7 +6,7 @@
 //
 // Sections: 正在朗读（进度 + 停止）· 书架（点书续读 / 目录选章 / 导入 txt）
 // · 播放设置（语速 / 定时 / 系统音量）。
-// 断点与守岸人对话侧（reading.listen / reading.stop 工具）同一条引擎、同一份
+// 断点与守岸人对话侧（reading_listen / reading_stop 工具）同一条引擎、同一份
 // listen-state.json，两边互通。
 //
 // Hand-written classic-script bundle; no build step. Styling uses only
@@ -42,8 +42,8 @@ window.__ModuleLoader__.load({
       chapterCurrent: ['当前断点在这里', 'bookmark is here'],
       chapterFromStart: ['从头开始（第 1 章前）', 'From the beginning'],
       speed: ['语速', 'Speed'],
-      timer: ['定时（分钟，0 = 不限）', 'Timer (min, 0 = unlimited)'],
-      timerHint: ['只在本次开读生效，不再沿用上次定时', 'Applies to this play only; no silent carry-over'],
+      timer: ['定时（分钟，默认 30，0 = 不限）', 'Timer (min, default 30, 0 = unlimited)'],
+      timerHint: ['默认读 30 分钟，只对这一次有效', 'Reads for 30 minutes by default; this play only'],
       volume: ['系统音量', 'System volume'],
       muted: ['静音', 'Mute'],
       importPick: ['选 txt 文件导入', 'Pick a txt file'],
@@ -291,7 +291,15 @@ window.__ModuleLoader__.load({
           setError('')
           try {
             const value = await call(action, payload)
-            if (aliveRef.current && value && (action === 'play' || action === 'stop')) setSnap((prev) => value)
+            // play/stop 的响应没有 books。整份替换会让书架在下一轮 books 轮询前崩掉。
+            if (aliveRef.current && value && (action === 'play' || action === 'stop')) {
+              setSnap((prev) => ({
+                ...(prev || {}),
+                ...value,
+                books: Array.isArray(value.books) ? value.books : (prev && prev.books) || [],
+                ttsAlive: typeof value.ttsAlive === 'boolean' ? value.ttsAlive : !!(prev && prev.ttsAlive),
+              }))
+            }
             return value
           } catch (e) {
             if (aliveRef.current) setError(String((e && e.message) || e))
@@ -306,8 +314,8 @@ window.__ModuleLoader__.load({
       const play = useCallback(
         async (bookId, fromOffset) => {
           const payload = { speed }
-          const timer = timerDraft != null && timerDraft !== '' ? Number(timerDraft) : 0
-          payload.timerMin = Number.isFinite(timer) ? Math.max(0, Math.floor(timer)) : 0
+          const timer = timerDraft != null && timerDraft !== '' ? Number(timerDraft) : 30
+          payload.timerMin = Number.isFinite(timer) ? Math.max(0, Math.min(120, Math.floor(timer))) : 30
           if (bookId) payload.bookId = bookId
           if (typeof fromOffset === 'number') payload.fromOffset = fromOffset
           // 朗读中换书/换章：先停再读（host 会拒绝播放中的 play）
@@ -331,7 +339,7 @@ window.__ModuleLoader__.load({
           setVolumeState((prev) => ({ ...(prev || {}), volume: value }))
           try {
             const v = await call('setVolume', { volume: value })
-            if (v && aliveRef.current) setVolumeState(v)
+            if (v && aliveRef.current) setVolumeState((prev) => ({ volume: 50, muted: false, ...(prev || {}), ...v }))
           } catch (e) {
             if (aliveRef.current) setError(String((e && e.message) || e))
           }
@@ -387,8 +395,9 @@ window.__ModuleLoader__.load({
       const playing = !!(snap.status && snap.status.playing)
       const progress = statusMeta(snap)
       const resume = snap.resume
-      const timerValue = timerDraft != null ? timerDraft : '0'
+      const timerValue = timerDraft != null ? timerDraft : '30'
       const volume = volumeDraft != null ? volumeDraft : volumeState ? volumeState.volume : 50
+      const books = Array.isArray(snap.books) ? snap.books : []
 
       return h(
         'div',
@@ -443,9 +452,9 @@ window.__ModuleLoader__.load({
           'div',
           { className: 'dsh-reading-section' },
           h('div', { className: 'dsh-reading-h' }, tr('groupShelf')),
-          snap.books.length === 0
+          books.length === 0
             ? h('div', { className: 'dsh-reading-hint' }, tr('emptyShelf'))
-            : snap.books.map((book) =>
+            : books.map((book) =>
                 h(
                   'div',
                   { key: book.id },
@@ -576,8 +585,8 @@ window.__ModuleLoader__.load({
               max: 100,
               value: volume,
               onChange: (e) => setVolumeDraft(Number(e.target.value)),
-              onMouseUp: (e) => void applyVolume(Number(e.target.value)),
-              onTouchEnd: (e) => void applyVolume(Number(e.target.value)),
+              onPointerUp: (e) => void applyVolume(Number(e.target.value)),
+              onKeyUp: (e) => void applyVolume(Number(e.target.value)),
             }),
             h(
               'button',

@@ -2,7 +2,7 @@
  * books/status/play/stop 四动作与引擎联动。
  */
 
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -82,11 +82,9 @@ describe('/reading-panel RPC', () => {
     const ctx = {
       tools: { register: vi.fn() },
       connection: {
-        rpc: {
-          handle: (channel: string, handler: (action: string, payload: unknown) => Promise<unknown>) => {
-            handlers[channel] = handler
-            return async () => {}
-          },
+        register: (_owner: unknown, channel: string, handler: (action: string, payload: unknown) => Promise<unknown>) => {
+          handlers[channel] = handler
+          return async () => {}
         },
       },
       logger: () => ({ info: () => {}, warn: () => {}, error: () => {} }),
@@ -208,10 +206,21 @@ describe('/reading-panel RPC', () => {
 
     const dup = await call('import', {
       name: '导入的书.txt',
-      dataBase64: Buffer.from(content, 'utf-8').toString('base64'),
+      dataBase64: Buffer.from('这段不该把原书盖掉。', 'utf-8').toString('base64'),
     })
     expect(dup.ok).toBe(false)
     expect((dup.error as { message: string }).message).toContain('同名')
+    expect(readFileSync(join(dataDir, 'books-txt', '导入的书.txt'), 'utf-8')).toBe(content)
+
+    const bommed = await call('import', {
+      name: '带BOM.txt',
+      dataBase64: Buffer.from('\uFEFF第一章 起\n甲。\n第二章 承\n乙。\n', 'utf-8').toString('base64'),
+    })
+    expect(bommed.ok).toBe(true)
+    const bomText = readFileSync(join(dataDir, 'books-txt', '带BOM.txt'), 'utf-8')
+    expect(bomText.charCodeAt(0)).not.toBe(0xfeff)
+    const bomChapters = await call('chapters', { bookId: '带BOM' })
+    expect((bomChapters.value as { total: number }).total).toBe(2)
 
     // GBK「我」= 0xCE 0xD2（非合法 UTF-8 → 回落 gb18030）
     const gbk = await call('import', {
@@ -226,4 +235,39 @@ describe('/reading-panel RPC', () => {
     )
     expect(text).toBe('我')
   })
+
+  it('play：面板定时不写回 listen-state，缺省也不沿用上次的 2 分钟', async () => {
+    writeFileSync(
+      join(dataDir, 'listen-state.json'),
+      JSON.stringify({ version: 1, current_id: null, timer_min: 2, books: {} }),
+    )
+    const local: Record<string, (action: string, payload: unknown) => Promise<unknown>> = {}
+    apply(
+      {
+        tools: { register: () => {} },
+        connection: {
+          register: (_owner: unknown, channel: string, handler: (action: string, payload: unknown) => Promise<unknown>) => {
+            local[channel] = handler
+            return async () => {}
+          },
+        },
+        logger: () => ({ info: () => {}, warn: () => {}, error: () => {} }),
+      } as never,
+      { dataDir, ttsBaseUrl: 'http://127.0.0.1:1', ttsSpeed: 1.0 },
+    )
+    const again = async (action: string, payload: unknown = {}) =>
+      (await local['/reading-panel']?.(action, payload)) as Record<string, unknown>
+
+    const omitted = await again('play', { bookId: 'b-3' })
+    expect(omitted.ok).toBe(true)
+    expect((omitted.value as { status: { sessionTimerMin: number } }).status.sessionTimerMin).toBe(30)
+    expect(JSON.parse(readFileSync(join(dataDir, 'listen-state.json'), 'utf-8')).timer_min).toBe(2)
+    await again('stop')
+
+    const timed = await again('play', { bookId: 'b-3', timerMin: 5 })
+    expect(timed.ok).toBe(true)
+    expect((timed.value as { status: { sessionTimerMin: number } }).status.sessionTimerMin).toBe(5)
+    expect(JSON.parse(readFileSync(join(dataDir, 'listen-state.json'), 'utf-8')).timer_min).toBe(2)
+    await again('stop')
+  }, 15_000)
 })

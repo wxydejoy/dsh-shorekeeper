@@ -14,7 +14,7 @@ window.__ModuleLoader__.load({
   id: 'dsh-keeper-console',
   factory(require) {
     const React = require('react')
-    const { useState, useEffect, useCallback } = React
+    const { useState, useEffect, useCallback, useRef } = React
     const h = React.createElement
 
     // ---------------------------------------------------- localized text --
@@ -38,6 +38,8 @@ window.__ModuleLoader__.load({
       quietEnabled: ['免打扰 23:00–07:00', 'Quiet hours 23:00–07:00'],
       quietEnabledHint: ['免打扰时段内一律不主动开口', 'No proactive messages during quiet hours'],
       dailyLimit: ['每日提醒上限', 'Daily alert limit'],
+      dailyLimitHint: ['0 = 今天不再提醒（不是不限次数）', '0 = no alerts today (not unlimited)'],
+      controlPerMinuteHint: ['0 = 不限流', '0 = no rate limit'],
       apply: ['应用', 'Apply'],
       saved: ['已保存', 'Saved'],
       saveFailed: ['保存失败', 'Save failed'],
@@ -176,6 +178,44 @@ window.__ModuleLoader__.load({
       )
     }
 
+    // 按下后立刻改本地画面。热重载前拉回来的快照还是旧值，用同一次点击再盖一层，
+    // 开关不会弹回。互斥规则与宿主 normalizeTtsPatch 一致。
+    function paintSnap(base, action, payload) {
+      if (!base || typeof base !== 'object') return base
+      const next = {
+        ...base,
+        tts: { ...(base.tts || {}) },
+        voice: { ...(base.voice || {}) },
+        watch: { ...(base.watch || {}) },
+        deskMi: { ...(base.deskMi || {}) },
+      }
+      if (action === 'setTts') {
+        if (typeof payload?.speakReplies === 'boolean') next.tts.speakReplies = payload.speakReplies
+        if (typeof payload?.speakAsItGoes === 'boolean') next.tts.speakAsItGoes = payload.speakAsItGoes
+        if (payload?.speakReplies === true) next.tts.speakAsItGoes = false
+        if (payload?.speakAsItGoes === true) next.tts.speakReplies = false
+      } else if (action === 'setVoice') {
+        if (typeof payload?.readAloudOn === 'boolean') next.voice.readAloudOn = payload.readAloudOn
+      } else if (action === 'setKeeper') {
+        const watch = payload?.watch
+        if (watch && typeof watch === 'object') {
+          if (typeof watch.enabled === 'boolean') next.watch.enabled = watch.enabled
+          if (typeof watch.quietEnabled === 'boolean') next.watch.quietEnabled = watch.quietEnabled
+          if (typeof watch.dailyLimit === 'number' && Number.isFinite(watch.dailyLimit)) {
+            next.watch.dailyLimit = Math.max(0, Math.floor(watch.dailyLimit))
+          }
+        }
+        const desk = payload?.deskMi
+        if (desk && typeof desk === 'object') {
+          if (typeof desk.controlEnabled === 'boolean') next.deskMi.controlEnabled = desk.controlEnabled
+          if (typeof desk.controlPerMinute === 'number' && Number.isFinite(desk.controlPerMinute)) {
+            next.deskMi.controlPerMinute = Math.max(0, Math.floor(desk.controlPerMinute))
+          }
+        }
+      }
+      return next
+    }
+
     // --------------------------------------------------------------- panel --
 
     function KeeperPanel({ call }) {
@@ -185,6 +225,7 @@ window.__ModuleLoader__.load({
       const [flash, setFlash] = useState('')
       const [draftLimit, setDraftLimit] = useState(null)
       const [draftRate, setDraftRate] = useState(null)
+      const epoch = useRef(0)
 
       const load = useCallback(async () => {
         setError('')
@@ -202,19 +243,31 @@ window.__ModuleLoader__.load({
 
       const run = useCallback(
         async (key, action, payload) => {
+          const gen = ++epoch.current
+          let prior = null
+          let written = false
+          setSnap((prev) => {
+            prior = prev
+            return paintSnap(prev, action, payload)
+          })
           setBusyKey(key)
           setFlash('')
           setError('')
           try {
             await call(action, payload)
+            written = true
+            if (epoch.current !== gen) return
             const value = await call('snapshot', {})
-            setSnap(value)
+            if (epoch.current !== gen) return
+            setSnap(paintSnap(value, action, payload))
             setFlash(tr('saved'))
             setTimeout(() => setFlash(''), 2000)
           } catch (e) {
+            if (epoch.current !== gen) return
+            if (!written) setSnap(prior)
             setError(String((e && e.message) || e))
           } finally {
-            setBusyKey('')
+            if (epoch.current === gen) setBusyKey('')
           }
         },
         [call],
@@ -265,16 +318,21 @@ window.__ModuleLoader__.load({
                   busy: busy('sg'),
                   onChange: (v) => void run('sg', 'setTts', { speakAsItGoes: v }),
                 }),
-                h(ToggleRow, {
-                  key: 'ra',
-                  name: tr('readAloudOn'),
-                  hint: tr('readAloudHint'),
-                  checked: snap.voice.readAloudOn,
-                  busy: busy('ra'),
-                  onChange: (v) => void run('ra', 'setVoice', { readAloudOn: v }),
-                }),
               ]
-            : h('div', { className: 'dsh-keeper-console-hint' }, tr('settingsUnavailable')),
+            : null,
+          snap.voice.available
+            ? h(ToggleRow, {
+                key: 'ra',
+                name: tr('readAloudOn'),
+                hint: tr('readAloudHint'),
+                checked: snap.voice.readAloudOn,
+                busy: busy('ra'),
+                onChange: (v) => void run('ra', 'setVoice', { readAloudOn: v }),
+              })
+            : null,
+          !snap.tts.available && !snap.voice.available
+            ? h('div', { className: 'dsh-keeper-console-hint' }, tr('settingsUnavailable'))
+            : null,
         ),
 
         h(
@@ -296,6 +354,7 @@ window.__ModuleLoader__.load({
           }),
           h(NumberRow, {
             name: tr('dailyLimit'),
+            hint: tr('dailyLimitHint'),
             value: snap.watch.dailyLimit,
             draft: draftLimit,
             onDraft: setDraftLimit,
@@ -319,6 +378,7 @@ window.__ModuleLoader__.load({
           }),
           h(NumberRow, {
             name: tr('controlPerMinute'),
+            hint: tr('controlPerMinuteHint'),
             value: snap.deskMi.controlPerMinute,
             draft: draftRate,
             onDraft: setDraftRate,

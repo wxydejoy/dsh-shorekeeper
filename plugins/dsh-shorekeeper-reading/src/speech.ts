@@ -122,6 +122,157 @@ export function buildReadChunks(text: string, target = PACK_TARGET, limit = PACK
   return result
 }
 
+export interface ReadCursor {
+  /** 下一段要念的。读完返回 null。 */
+  next(): ReadChunk | null
+}
+
+/**
+ * 从 offset 起按需切下一段，不先把整本书打成块。
+ *
+ * 全书先 buildReadChunks 再开口：300 万字要扫十多秒，请求还没发出声音就空等。
+ * 这里和 packReadChunks 同一套 36/52 规则，但只往前消化到「当前这段已经稳定」
+ * （后一段也已成形，或已经到文末并做完过短尾块合并）。offset 落在某段中间时，
+ * 返回的仍是那一整段（和 findIndex(end > offset) 一样，不从半段开口）。
+ */
+export function openReadCursor(text: string, offset = 0, target = PACK_TARGET, limit = PACK_LIMIT): ReadCursor {
+  const n = text.length
+  const tailMax = Math.ceil(target / 2)
+  let scan = 0
+  let buffer = ''
+  let bufferStart = 0
+  let bufferEnd = 0
+  let held: ReadChunk | null = null
+  let eof = false
+  const ready: ReadChunk[] = []
+
+  function pushReady(chunk: ReadChunk): void {
+    if (!chunk.text || PUNCT_ONLY.test(chunk.text)) return
+    ready.push(chunk)
+  }
+
+  function hold(chunk: ReadChunk): void {
+    if (!chunk.text || PUNCT_ONLY.test(chunk.text)) return
+    if (held) pushReady(held)
+    held = chunk
+  }
+
+  function flushBuffer(): void {
+    if (!buffer) return
+    hold({ text: buffer, start: bufferStart, end: bufferEnd })
+    buffer = ''
+  }
+
+  function addClause(clause: string, start: number, end: number): void {
+    if (!clause) return
+    if (clause.length > limit) {
+      flushBuffer()
+      for (let k = 0; k < clause.length; k += limit) {
+        const part = clause.slice(k, k + limit)
+        hold({ text: part, start: start + k, end: start + k + part.length })
+      }
+      return
+    }
+    if (buffer !== '' && buffer.length + clause.length > target) {
+      flushBuffer()
+      buffer = clause
+      bufferStart = start
+      bufferEnd = end
+      return
+    }
+    if (buffer === '') {
+      buffer = clause
+      bufferStart = start
+      bufferEnd = end
+    } else {
+      buffer += clause
+      bufferEnd = end
+    }
+  }
+
+  function consumeRaw(rawStart: number, rawEnd: number): void {
+    const raw = text.slice(rawStart, rawEnd)
+    const sentence = raw.trim()
+    if (!sentence || PUNCT_ONLY.test(sentence)) return
+    const lead = raw.indexOf(sentence)
+    const origin = rawStart + (lead >= 0 ? lead : 0)
+    const pieces: Array<{ text: string; start: number }> = []
+    if (sentence.length <= SENTENCE_LIMIT) pieces.push({ text: sentence, start: origin })
+    else {
+      for (let k = 0; k < sentence.length; k += SENTENCE_LIMIT) {
+        pieces.push({ text: sentence.slice(k, k + SENTENCE_LIMIT), start: origin + k })
+      }
+    }
+    for (const piece of pieces) {
+      let clauseAt = 0
+      for (let k = 0; k < piece.text.length; k++) {
+        const ch = piece.text[k]
+        if (ch === '，' || ch === '、' || ch === '；' || ch === '：') {
+          addClause(piece.text.slice(clauseAt, k + 1), piece.start + clauseAt, piece.start + k + 1)
+          clauseAt = k + 1
+        }
+      }
+      if (clauseAt < piece.text.length) {
+        addClause(piece.text.slice(clauseAt), piece.start + clauseAt, piece.start + piece.text.length)
+      }
+    }
+  }
+
+  function finish(): void {
+    if (buffer) {
+      if (held && buffer.length <= tailMax && held.text.length + buffer.length <= limit) {
+        held = { text: held.text + buffer, start: held.start, end: bufferEnd }
+      } else {
+        hold({ text: buffer, start: bufferStart, end: bufferEnd })
+      }
+      buffer = ''
+    }
+    if (held) {
+      pushReady(held)
+      held = null
+    }
+  }
+
+  function pump(): void {
+    if (eof) return
+    if (scan >= n) {
+      eof = true
+      finish()
+      return
+    }
+    let j = scan
+    while (j < n) {
+      const ch = text[j]
+      if (ch === '。' || ch === '！' || ch === '？' || ch === '\n') break
+      j++
+    }
+    const rawEnd = j < n ? j + 1 : n
+    consumeRaw(scan, rawEnd)
+    scan = rawEnd
+  }
+
+  let primed = false
+  function prime(): void {
+    if (primed) return
+    primed = true
+    if (offset <= 0) return
+    for (;;) {
+      while (ready.length === 0 && !eof) pump()
+      if (ready.length === 0) return
+      if ((ready[0]?.end ?? 0) > offset) return
+      ready.shift()
+    }
+  }
+
+  return {
+    next(): ReadChunk | null {
+      prime()
+      while (ready.length === 0 && !eof) pump()
+      return ready.shift() ?? null
+    },
+  }
+}
+
 // ------------------------------------------------------------------ 章节 --
 
 /** 章节标题行：第 X 章/节/卷/回/部/集，或常见特殊章名（序章/楔子/终章等）。 */

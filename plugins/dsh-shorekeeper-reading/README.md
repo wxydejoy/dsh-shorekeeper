@@ -13,17 +13,17 @@
 ## 实现说明（2026-11-03 · 阶段一/二）
 
 - 数据迁移：`migration/export_books.py`（写前备份、幂等、源只读、未识别字段全量进报告）+ 逆向笔记 `migration/books-format.md`；数据落 `$DSH_HOME/data/reading`
-- 工具面：`reading.shelf`（状态过滤）、`reading.progress`（页码/百分比/章节，状态机联动）、`reading.note`（摘抄/随想，可关联书与章节）、`reading.ask`（本地检索）
+- 工具面：`reading_shelf`（状态过滤）、`reading_progress`（页码/百分比/章节，状态机联动）、`reading_note`（摘抄/随想，可关联书与章节）、`reading_ask`（本地检索）
 - ⏸：真实数据回归（迁移报告抽查）、听书（T4 keeper-voice 联调）、睡前字幕（T2 提案路由）、记忆联动（T3 选型）
 
 ## 计划工具面
 
 | 工具 | 职责 | 权限 |
 |---|---|---|
-| `reading.shelf` | 列书架：在读/读完/想读、进度、最近阅读 | read-only |
-| `reading.progress` | 更新进度（页码/百分比/章节），守岸人可代记「看到 217 页了」 | read-only |
-| `reading.note` | 摘抄与随想落库，可关联书与章节 | read-only |
-| `reading.ask` | 对读过的内容提问（结合记忆/摘要） | read-only |
+| `reading_shelf` | 列书架：在读/读完/想读、进度、最近阅读 | read-only |
+| `reading_progress` | 更新进度（页码/百分比/章节），守岸人可代记「看到 217 页了」 | read-only |
+| `reading_note` | 摘抄与随想落库，可关联书与章节 | read-only |
+| `reading_ask` | 对读过的内容提问（结合记忆/摘要） | read-only |
 | 听书模式 | 调 dsh-keeper-voice 朗读书籍内容（分段流式，可打断） | 审批 |
 
 ## 数据来源

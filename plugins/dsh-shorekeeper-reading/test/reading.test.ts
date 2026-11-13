@@ -85,23 +85,23 @@ function byName(name: string) {
   return tool
 }
 
-describe('reading.shelf', () => {
+describe('reading_shelf', () => {
   it('列出书架与进度（真实 schema）', async () => {
-    const result = (await byName('reading.shelf').execute({}, {} as never)) as { summary: string; total: number }
+    const result = (await byName('reading_shelf').execute({}, {} as never)) as { summary: string; total: number }
     expect(result.total).toBe(2)
     expect(result.summary).toContain('我合成了全世界 · 王自律 · 读到 17.64%')
     expect(result.summary).toContain('想读')
   })
 
   it('按状态过滤', async () => {
-    const result = (await byName('reading.shelf').execute({ status: 'wishlist' }, {} as never)) as { total: number }
+    const result = (await byName('reading_shelf').execute({ status: 'wishlist' }, {} as never)) as { total: number }
     expect(result.total).toBe(1)
   })
 })
 
-describe('reading.progress', () => {
+describe('reading_progress', () => {
   it('「看到 217 页了」→ 记进度并联动状态', async () => {
-    const result = (await byName('reading.progress').execute(
+    const result = (await byName('reading_progress').execute(
       { book: '我合成了全世界', page: 217 },
       {} as never,
     )) as { ok: boolean; summary: string }
@@ -114,19 +114,19 @@ describe('reading.progress', () => {
   })
 
   it('percent 到 100 自动读完并盖 finished_at', async () => {
-    await byName('reading.progress').execute({ book: '我合成了全世界', percent: 100 }, {} as never)
+    await byName('reading_progress').execute({ book: '我合成了全世界', percent: 100 }, {} as never)
     const book = store().books[0]
     expect(book?.status).toBe('finished')
     expect(book?.finished_at).not.toBeNull()
   })
 
   it('想读的书一记进度就转在读', async () => {
-    await byName('reading.progress').execute({ book: '合成岸边', percent: 1 }, {} as never)
+    await byName('reading_progress').execute({ book: '合成岸边', percent: 1 }, {} as never)
     expect(store().books[1]?.status).toBe('reading')
   })
 
   it('书名歧义 → 请说具体些', async () => {
-    const result = (await byName('reading.progress').execute({ book: '合成', page: 1 }, {} as never)) as {
+    const result = (await byName('reading_progress').execute({ book: '合成', page: 1 }, {} as never)) as {
       ok: false
       degraded: string
     }
@@ -135,7 +135,7 @@ describe('reading.progress', () => {
   })
 
   it('不存在的书 → 如实说', async () => {
-    const result = (await byName('reading.progress').execute({ book: '不存在的书', page: 1 }, {} as never)) as {
+    const result = (await byName('reading_progress').execute({ book: '不存在的书', page: 1 }, {} as never)) as {
       ok: false
       degraded: string
     }
@@ -143,9 +143,9 @@ describe('reading.progress', () => {
   })
 })
 
-describe('reading.note', () => {
+describe('reading_note', () => {
   it('摘抄落库并关联书', async () => {
-    const result = (await byName('reading.note').execute(
+    const result = (await byName('reading_note').execute(
       { book: '我合成了全世界', text: '时间还在，别急。', thought: '第四章的金句', chapterTitle: '第一章' },
       {} as never,
     )) as { ok: boolean; summary: string }
@@ -156,27 +156,27 @@ describe('reading.note', () => {
   })
 
   it('不关联书的自由随想', async () => {
-    const result = (await byName('reading.note').execute({ text: '夜里灯带会自己暗下去。' }, {} as never)) as {
+    const result = (await byName('reading_note').execute({ text: '夜里灯带会自己暗下去。' }, {} as never)) as {
       summary: string
     }
     expect(result.summary).toContain('自由随想')
   })
 })
 
-describe('reading.ask', () => {
+describe('reading_ask', () => {
   it('从摘抄与书目里检索', async () => {
-    await byName('reading.note').execute(
+    await byName('reading_note').execute(
       { book: '我合成了全世界', text: '书签还在上次那页。' },
       {} as never,
     )
-    const result = (await byName('reading.ask').execute({ question: '书签' }, {} as never)) as {
+    const result = (await byName('reading_ask').execute({ question: '书签' }, {} as never)) as {
       summary: string
     }
     expect(result.summary).toContain('书签还在上次那页')
   })
 
   it('没命中就如实说', async () => {
-    const result = (await byName('reading.ask').execute({ question: '量子力学' }, {} as never)) as {
+    const result = (await byName('reading_ask').execute({ question: '量子力学' }, {} as never)) as {
       summary: string
     }
     expect(result.summary).toContain('没有命中')

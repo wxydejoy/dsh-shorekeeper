@@ -171,7 +171,7 @@ export class ShelfStore {
     }
   }
 
-  /** reading.ask 的本地检索：摘抄/随想 + 书名/进度信息。记忆插件检索 ⏸ T3 选型后挂接（T1 已选 feiyu-memory）。 */
+  /** reading_ask 的本地检索：摘抄/随想 + 书名/进度信息。记忆插件检索 ⏸ T3 选型后挂接（T1 已选 feiyu-memory）。 */
   ask(question: string): { notes: BookNote[]; books: Book[] } {
     const keywords = question
       .toLowerCase()

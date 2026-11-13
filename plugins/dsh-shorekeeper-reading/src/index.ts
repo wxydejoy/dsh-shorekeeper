@@ -18,7 +18,9 @@ import { ListenEngine, ListenState } from './listen.ts'
 import { findChapters, type ChapterMark } from './speech.ts'
 import { getVolume, setVolume, setMuted } from './volume.ts'
 
-export const inject = ['tools', 'connection']
+// webServer：挂面板路由最终要走 webServer.register，inject 缺声明会
+// 「cannot get property "webServer" without inject」直接激活失败（k20 同款声明）。
+export const inject = ['tools', 'connection', 'webServer']
 
 export { Config }
 
@@ -111,7 +113,21 @@ function registerPanelRpc(
     muted?: boolean
   }
 
-  ctx.connection.rpc.handle('/reading-panel', async (action, rawPayload) => {
+  // 别用 connection.rpc.handle：那条通道在 connection 服务实例自己的 fiber 上取
+  // webServer，拿不到就「without inject」激活失败（k20:170 记过同款坑）。
+  // register(ctx, …) 显式把插件 ctx 当 owner，路由挂在插件自己的 webServer 上。
+  // register 运行时存在（console 同款）但 HostConnectionHandle 类型没暴露（上游
+  // 类型缺口），这里按实际签名窄化断言。
+  const registerChannel = (
+    ctx.connection as unknown as {
+      register: (
+        owner: Context,
+        channel: string,
+        handler: (action: string, payload: unknown) => Promise<unknown>,
+      ) => unknown
+    }
+  ).register.bind(ctx.connection)
+  registerChannel(ctx, '/reading-panel', async (action, rawPayload) => {
     const payload: PanelPayload =
       rawPayload && typeof rawPayload === 'object' ? (rawPayload as PanelPayload) : {}
     try {
@@ -141,14 +157,16 @@ function registerPanelRpc(
           if (!book && !bookId) book = engine.resumeCandidate()
           if (!book) throw new Error(bookId ? '书架上没有这本书' : '还没有可续读的书：先从书架挑一本')
           if (engine.playing) throw new Error(`正在读《${engine.status?.title ?? ''}》，先停止再换`)
-          if (store.readBookText(book) === null) {
+          if (!store.hasBookText(book)) {
             throw new Error(`《${book.title}》的书文件不在盘上（未迁移），读不了`)
           }
           if (book.status === 'wishlist') store.updateProgress(book.id, {})
-          const options: { timerMin?: number; speed?: number; fromOffset?: number } = {}
-          // 定时语义（2026-11-05 修正）：只在显式传入时生效——面板不再静默沿用上次的
-          // 定时（曾把 E2E 的 timerMin:2 持久化，之后每次开读 2 分钟就自己停）。
-          // 0 = 不限；工具面（reading.listen）行为不变。
+          // 面板定时只作用于这一轮，不写回 listen-state（避免把工具面的定时盖掉）。
+          // 缺省 30 分钟。传 0 才是不限。
+          const options: { timerMin: number; speed?: number; fromOffset?: number; rememberTimer: false } = {
+            timerMin: 30,
+            rememberTimer: false,
+          }
           if (typeof payload.timerMin === 'number' && Number.isFinite(payload.timerMin)) {
             options.timerMin = Math.min(120, Math.max(0, Math.floor(payload.timerMin)))
           }
@@ -183,8 +201,12 @@ function registerPanelRpc(
           } catch {
             text = new TextDecoder('gb18030').decode(raw)
           }
-          const baseName = name.replace(/\.(txt|text)$/i, '').trim() || '未命名'
-          if (/[\\/\u0000]/.test(baseName)) throw new Error('文件名含非法字符')
+          if (text.charCodeAt(0) === 0xfeff) text = text.slice(1)
+          if (text.length === 0) throw new Error('文件是空的')
+          const baseName = importBaseName(name)
+          if (store.books.some((existing) => existing.id === baseName)) {
+            throw new Error(`书架已有同名书：${baseName}`)
+          }
           const sourceFile = `${baseName}.txt`
           const book: Book = {
             id: baseName,
@@ -213,14 +235,14 @@ function registerPanelRpc(
           if (typeof payload.volume !== 'number' || !Number.isFinite(payload.volume)) {
             throw new Error('volume 必须是数字（0–100）')
           }
-          const applied = await setVolume(payload.volume)
-          return { ok: true, value: { volume: applied } }
+          await setVolume(payload.volume)
+          return { ok: true, value: await getVolume() }
         }
 
         case 'setMuted': {
           if (typeof payload.muted !== 'boolean') throw new Error('muted 必须是布尔')
-          const applied = await setMuted(payload.muted)
-          return { ok: true, value: { muted: applied } }
+          await setMuted(payload.muted)
+          return { ok: true, value: await getVolume() }
         }
 
         default:
@@ -240,4 +262,13 @@ function registerPanelRpc(
   })
 
   ctx.logger('shorekeeper-reading').info('reading-panel 就绪：小说朗读通道 /reading-panel 已挂（章节/导入/音量）')
+}
+
+/** 导入文件名 → 书 id。去掉扩展名，拒绝路径片段，避免写出 books-txt 目录之外。 */
+function importBaseName(name: string): string {
+  const base = name.trim().replace(/\.(txt|text)$/i, '').trim() || '未命名'
+  if (base === '.' || base === '..' || /[\\/\u0000]/.test(base)) {
+    throw new Error('文件名含非法字符')
+  }
+  return base
 }

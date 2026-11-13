@@ -42,7 +42,7 @@ function startListening(
   if (book.status === 'wishlist') store.updateProgress(book.id, {}) // 想读 → 在读联动
   const started = engine.start(book, options)
   if (!started) {
-    return { ok: false, degraded: '已经在读着了（reading.stop 可停）', status: toJson(engine.status) } satisfies Json
+    return { ok: false, degraded: '已经在读着了（reading_stop 可停）', status: toJson(engine.status) } satisfies Json
   }
   const status = engine.status
   return {
@@ -56,7 +56,7 @@ export function createReadingTools(deps: ReadingToolDeps): ToolDefinition[] {
   const { store, listen: engine } = deps
 
   const shelf = defineTool({
-    name: 'reading.shelf',
+    name: 'reading_shelf',
     description:
       '查看书架：在读/读完/想读 + 进度，按最近阅读排序。守岸人聊「最近在读什么」「上次读到哪」从这里拿事实。',
     parameters: {
@@ -86,7 +86,7 @@ export function createReadingTools(deps: ReadingToolDeps): ToolDefinition[] {
   })
 
   const progress = defineTool({
-    name: 'reading.progress',
+    name: 'reading_progress',
     description:
       '记录阅读进度（页码/百分比/章节，至少给一个）。守岸人代记「看到 217 页了」就调这里；记完书架状态自动联动（想读→在读，100%→读完）。',
     parameters: {
@@ -134,7 +134,7 @@ export function createReadingTools(deps: ReadingToolDeps): ToolDefinition[] {
   })
 
   const note = defineTool({
-    name: 'reading.note',
+    name: 'reading_note',
     description: '把摘抄或随想落库，可关联书与章节。守岸人「把这句记下来」就调这里。',
     parameters: {
       book: { type: 'string', description: '关联的书（可空：不关联的随想）' },
@@ -171,7 +171,7 @@ export function createReadingTools(deps: ReadingToolDeps): ToolDefinition[] {
   })
 
   const ask = defineTool({
-    name: 'reading.ask',
+    name: 'reading_ask',
     description:
       '对读过的内容提问：在摘抄/随想与书架信息里检索。守岸人「上次读到那章了」「你摘过哪句」走这里。（长期记忆检索 ⏸ T3 选型后挂接）',
     parameters: {
@@ -199,12 +199,12 @@ export function createReadingTools(deps: ReadingToolDeps): ToolDefinition[] {
   })
 
   const listen = defineTool({
-    name: 'reading.listen',
+    name: 'reading_listen',
     description:
       '开始听书：从指定书（或断点）起，用守岸人的克隆音色在 Mac Mini 喇叭朗读。守岸人「给我读会儿书」「接着昨晚的读」就调这里。语速 0.5–2.0。',
     parameters: {
       book: { type: 'string', description: '书名或书 id（唯一命中即可）' },
-      timerMin: { type: 'number', description: '定时分钟数（到点自动停；缺省沿用上次定时）' },
+      timerMin: { type: 'number', description: '定时分钟数（到点自动停；0=不限；缺省沿用上次定时）' },
       speed: { type: 'number', description: '语速 0.5–2.0（缺省 1.0）' },
     },
     output: {
@@ -223,20 +223,22 @@ export function createReadingTools(deps: ReadingToolDeps): ToolDefinition[] {
         } satisfies Json
       }
       if (engine.status?.playing) {
-        return { ok: false, degraded: '已经在读着了（reading.stop 可停）', status: toJson(engine.status) } satisfies Json
+        return { ok: false, degraded: '已经在读着了（reading_stop 可停）', status: toJson(engine.status) } satisfies Json
       }
       if (store.readBookText(book) === null) {
         return { ok: false, degraded: `《${book.title}》的书文件不在盘上（未迁移），读不了` } satisfies Json
       }
       const options: { timerMin?: number; speed?: number } = {}
-      if (typeof args.timerMin === 'number' && args.timerMin > 0) options.timerMin = Math.min(120, args.timerMin)
+      if (typeof args.timerMin === 'number' && Number.isFinite(args.timerMin) && args.timerMin >= 0) {
+        options.timerMin = Math.min(120, Math.floor(args.timerMin))
+      }
       if (typeof args.speed === 'number') options.speed = args.speed
       return startListening(deps, book, options)
     },
   })
 
   const stop = defineTool({
-    name: 'reading.stop',
+    name: 'reading_stop',
     description: '停止听书（打断朗读，记下断点，下次能接着读）。守岸人「别读了」「停一下」就调这里。',
     parameters: {},
     output: {
@@ -258,11 +260,11 @@ export function createReadingTools(deps: ReadingToolDeps): ToolDefinition[] {
   })
 
   const resume = defineTool({
-    name: 'reading.resume',
+    name: 'reading_resume',
     description: '断点续读：从上次停下的地方继续读（不指定书就续最近在听的那本）。',
     parameters: {
       book: { type: 'string', description: '书名或书 id（缺省续 current）' },
-      timerMin: { type: 'number', description: '定时分钟数' },
+      timerMin: { type: 'number', description: '定时分钟数（0=不限；缺省沿用上次定时）' },
       speed: { type: 'number', description: '语速 0.5–2.0' },
     },
     output: {
@@ -276,13 +278,15 @@ export function createReadingTools(deps: ReadingToolDeps): ToolDefinition[] {
         return { ok: false, degraded: '没有可续读的书（还没听过）' } satisfies Json
       }
       if (engine.status?.playing) {
-        return { ok: false, degraded: '已经在读着了（reading.stop 可停）', status: toJson(engine.status) } satisfies Json
+        return { ok: false, degraded: '已经在读着了（reading_stop 可停）', status: toJson(engine.status) } satisfies Json
       }
       if (store.readBookText(book) === null) {
         return { ok: false, degraded: `《${book.title}》的书文件不在盘上（未迁移），读不了` } satisfies Json
       }
       const options: { timerMin?: number; speed?: number } = {}
-      if (typeof args.timerMin === 'number' && args.timerMin > 0) options.timerMin = Math.min(120, args.timerMin)
+      if (typeof args.timerMin === 'number' && Number.isFinite(args.timerMin) && args.timerMin >= 0) {
+        options.timerMin = Math.min(120, Math.floor(args.timerMin))
+      }
       if (typeof args.speed === 'number') options.speed = args.speed
       return startListening(deps, book, options)
     },

@@ -1,7 +1,7 @@
 /** 听书引擎：切句打包（speech.ts）→ keeper-tts 服务端喇叭逐段朗读 → 每段落盘 offset（断点续读）。
  *
  * 业务规则对齐 migration/books-format.md §4 / books.py：
- * - 打断 = 再来一条指令即停（最简版，barge-in 桥 ⏸ T4）：reading.stop 调 /v1/stop + 本地循环中止。
+ * - 打断 = 再来一条指令即停（最简版，barge-in 桥 ⏸ T4）：reading_stop 调 /v1/stop + 本地循环中止。
  * - 朗读中每句落盘 offset——天然就是「断点续读」。
  * - 定时：deadline 到点停（stopped_by: "timer"）；恢复续跑不重置剩余时长。
  * - stopped_by 取值：user / timer / end / error。
@@ -11,7 +11,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { buildReadChunks, estimateReadSeconds, type ReadChunk } from './speech.ts'
+import { estimateReadSeconds, openReadCursor, PACK_TARGET, type ReadChunk, type ReadCursor } from './speech.ts'
 import { TtsClient } from './tts-client.ts'
 import type { Book, ShelfStore } from './shelf.ts'
 
@@ -31,6 +31,8 @@ export interface ListenStatus {
   chunkIndex: number
   totalChunks: number
   offset: number
+  /** 这一轮用的定时（分钟）。0 = 不限。和 listen-state 里持久的 timer_min 不是一回事。 */
+  sessionTimerMin: number
   stoppedBy: StoppedBy | null
   error: string | null
 }
@@ -116,10 +118,13 @@ export class ListenEngine {
 
   private current: {
     book: Book
-    chunks: ReadChunk[]
+    textLength: number
+    /** 已经交出去念的段数（进度条用；全文不预切） */
+    spoken: number
     startedAt: number
     deadline: number | null
     speed: number
+    timerMin: number
   } | null = null
   private controller: AbortController | null = null
   private loop: Promise<void> | null = null
@@ -145,26 +150,29 @@ export class ListenEngine {
   /** 当前播放快照（工具查询用） */
   get status(): ListenStatus | null {
     if (!this.current) return this.result
-    const { book, chunks } = this.current
+    const { book, textLength, spoken } = this.current
     const offset = this.state.getOffset(book)
-    const index = chunks.findIndex((c) => c.end > offset)
+    const totalChunks = Math.max(1, Math.ceil(textLength / PACK_TARGET))
     return {
       playing: this.loop !== null,
       bookId: book.id,
       title: book.title,
-      chunkIndex: index >= 0 ? index : chunks.length,
-      totalChunks: chunks.length,
+      chunkIndex: spoken,
+      totalChunks,
       offset,
+      sessionTimerMin: this.current.timerMin,
       stoppedBy: null,
       error: null,
     }
   }
 
   /** 开读（从断点或 0）。已在播放时返回 false。deadlineAt=绝对到期毫秒（测试/冻结剩余时长用）。
-   *  fromOffset=显式起播坐标（章节选择用）：先落盘断点再起播，覆盖已有断点。 */
+   *  fromOffset=显式起播坐标（章节选择用）：先落盘断点再起播，覆盖已有断点。
+   *  timerMin 缺省沿用 listen-state；显式传入且 rememberTimer !== false 才写回。
+   *  面板开读传 rememberTimer:false，避免把「本次定时」写进工具面共用的断点。 */
   start(
     book: Book,
-    options: { timerMin?: number; speed?: number; deadlineAt?: number; fromOffset?: number } = {},
+    options: { timerMin?: number; speed?: number; deadlineAt?: number; fromOffset?: number; rememberTimer?: boolean } = {},
   ): boolean {
     if (this.loop) return false
     const text = this.store.readBookText(book)
@@ -173,28 +181,31 @@ export class ListenEngine {
       this.state.setOffset(book, Math.max(0, Math.min(text.length, Math.floor(options.fromOffset))))
     }
     const speed = clampSpeed(options.speed ?? this.speedDefault)
-    const timerMin = options.timerMin ?? this.state.timerMin
-    if (options.timerMin !== undefined) this.state.setTimerMin(timerMin)
-    const chunks = buildReadChunks(text)
+    const timerMin = clampTimer(options.timerMin ?? this.state.timerMin)
+    if (options.timerMin !== undefined && options.rememberTimer !== false) this.state.setTimerMin(timerMin)
+    const fromOffset = this.state.getOffset(book)
     this.current = {
       book,
-      chunks,
+      textLength: text.length,
+      spoken: 0,
       startedAt: Date.now(),
       deadline: options.deadlineAt ?? (timerMin > 0 ? Date.now() + timerMin * 60_000 : null),
       speed,
+      timerMin,
     }
     this.controller = new AbortController()
     this.result = null
     const controller = this.controller
-    this.loop = this.runLoop(book, chunks, speed, controller)
+    this.loop = this.runLoop(book, text, fromOffset, speed, timerMin, controller)
       .catch((error: unknown) => {
         this.finish({
           playing: false,
           bookId: book.id,
           title: book.title,
           chunkIndex: 0,
-          totalChunks: chunks.length,
+          totalChunks: Math.max(1, Math.ceil(text.length / PACK_TARGET)),
           offset: this.state.getOffset(book),
+          sessionTimerMin: timerMin,
           stoppedBy: 'error',
           error: error instanceof Error ? error.message : String(error),
         })
@@ -229,18 +240,28 @@ export class ListenEngine {
 
   private finish(status: ListenStatus): void {
     this.result = status
+    // 播完就放开 current，之后 status 回到 lastResult（带 stoppedBy）。
+    // 留着 current 的话，轮询永远看到 stoppedBy=null，面板不知道是读完、到点还是手动停。
+    this.current = null
   }
 
-  private async runLoop(book: Book, chunks: ReadChunk[], speed: number, controller: AbortController): Promise<void> {
+  private async runLoop(
+    book: Book,
+    text: string,
+    fromOffset: number,
+    speed: number,
+    timerMin: number,
+    controller: AbortController,
+  ): Promise<void> {
     const current = this.current
     if (!current) return
-    const fromOffset = this.state.getOffset(book)
-    let index = chunks.findIndex((c) => c.end > fromOffset)
-    if (index < 0) index = chunks.length
+    const cursor: ReadCursor = openReadCursor(text, fromOffset)
+    const totalChunks = Math.max(1, Math.ceil(text.length / PACK_TARGET))
+    let index = 0
     let stoppedBy: StoppedBy = 'end'
     let errorMessage: string | null = null
 
-    for (; index < chunks.length; index++) {
+    for (;;) {
       if (controller.signal.aborted) {
         stoppedBy = 'user'
         break
@@ -249,7 +270,8 @@ export class ListenEngine {
         stoppedBy = 'timer'
         break
       }
-      const chunk = chunks[index]!
+      const chunk: ReadChunk | null = cursor.next()
+      if (!chunk) break
       const startedAt = Date.now()
       try {
         await this.tts.speak(chunk.text, { speed, signal: controller.signal })
@@ -263,7 +285,9 @@ export class ListenEngine {
         break
       }
       this.state.setOffset(book, chunk.end)
-      // 节流：speak 若早于估时返回，等到估时比例点再取下一段（服务端 _play_lock 串行，避免深排队）
+      index += 1
+      current.spoken = index
+      // 节流：speak 若早于估时返回，等到估时比例点再取下一段（服务端喇叭串行，避免深排队）
       if (current.deadline !== null && Date.now() >= current.deadline) {
         stoppedBy = 'timer'
         break
@@ -278,12 +302,18 @@ export class ListenEngine {
       bookId: book.id,
       title: book.title,
       chunkIndex: index,
-      totalChunks: chunks.length,
+      totalChunks,
       offset: this.state.getOffset(book),
+      sessionTimerMin: timerMin,
       stoppedBy,
       error: errorMessage,
     })
   }
+}
+
+function clampTimer(value: number): number {
+  if (!Number.isFinite(value)) return 0
+  return Math.min(120, Math.max(0, Math.floor(value)))
 }
 
 function clampSpeed(value: number): number {
