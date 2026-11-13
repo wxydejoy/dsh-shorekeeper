@@ -40,6 +40,10 @@ export interface KeeperWatchConfig {
   pcOfflineSustainedSec: number
   /** 手机（k20）离线持续秒数 */
   phoneOfflineSustainedSec: number
+  /** 插件激活失败自检：扫 err log 的本次启动段，有「did not activate」就提醒（2026-11-13 面板 405 事故） */
+  activationAlert: boolean
+  /** dsh 实例 err log 路径；空 = ~/.dsh/logs/dsh-web.err.log */
+  activationLogPath: string
   /** notify 桥 */
   notifyUrl: string
   notifyTokenPath: string
@@ -72,6 +76,8 @@ export const Config = Schema.object({
   pcOfflineAlert: Schema.boolean().description('PC 离线也提醒（默认关：关机是日常）').default(false),
   pcOfflineSustainedSec: Schema.number().description('PC 离线要持续的秒数').default(600),
   phoneOfflineSustainedSec: Schema.number().description('手机离线要持续的秒数').default(300),
+  activationAlert: Schema.boolean().description('插件激活失败时提醒（扫 err log 本次启动段）').default(true),
+  activationLogPath: Schema.string().description('dsh err log 路径；空 = ~/.dsh/logs/dsh-web.err.log').default(''),
   notifyUrl: Schema.string().description('微信 notify 桥地址').default('http://127.0.0.1:47832/notify'),
   notifyTokenPath: Schema.string().description('notify 桥 token 文件路径；空 = ~/.dsh/weixin/notify.json').default(''),
   tickSec: Schema.number().description('主循环间隔秒').default(60),

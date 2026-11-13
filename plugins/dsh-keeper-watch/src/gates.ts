@@ -138,3 +138,42 @@ function dayKey(now: Date): string {
   const d = String(now.getDate()).padStart(2, '0')
   return `${y}-${m}-${d}`
 }
+
+/** 插件激活自检（2026-11-13 面板 405 事故：插件没起来只有 err log 一行警告，
+ *  面板上表现为 405/空白，没人盯日志就发现不了）。
+ *
+ * dsh err log 是跨重启追加的，每次启动打一行 `dsh web: listening …`；
+ * 激活失败的插件紧随其后打 `<id> (<name>): Error: …`。只看最后一个
+ * marker 之后的段落 = 只看本次启动，旧账不重翻。找不到 marker（轮转截断/
+ * 标记行变了）时保守返回空，宁可漏报不误报。
+ */
+export interface ActivationScan {
+  /** 日志里启动标记出现的次数（重启一次 +1；watcher 据此识别「新的一次启动」） */
+  bootCount: number
+  /** 本次启动里激活失败的插件名（去重，按出现序） */
+  plugins: string[]
+}
+
+const BOOT_MARKER = 'dsh web: listening'
+const PLUGIN_ERROR_LINE = /^\S+ \(([^)]+)\): Error/m
+
+export function scanActivationFailures(log: string): ActivationScan {
+  const bootCount = log.split(BOOT_MARKER).length - 1
+  if (bootCount === 0) return { bootCount: 0, plugins: [] }
+  const current = log.slice(log.lastIndexOf(BOOT_MARKER))
+  const plugins: string[] = []
+  for (const line of current.split('\n')) {
+    const m = PLUGIN_ERROR_LINE.exec(line)
+    const name = m?.[1]
+    if (name && !plugins.includes(name)) plugins.push(name)
+  }
+  if (plugins.length === 0 && /did not activate/.test(current)) {
+    plugins.push('（没抓到名字，看日志）')
+  }
+  return { bootCount, plugins }
+}
+
+/** 激活失败提醒文案（守岸人口吻，报名单不说教）。 */
+export function activationAlertText(plugins: string[]): string {
+  return `有 ${plugins.length} 个插件这次没起来：${plugins.join('、')}。它们的功能这一轮是缺的，重启一下 :3090，或者叫我看日志。`
+}

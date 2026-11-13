@@ -6,16 +6,26 @@
  * - hubBaseUrl 非空时才拉 /v1/snapshot（pc 温度/内存、设备离线）。空地址跳过，不访问旧 hub
  * - Open-Meteo：天气与 PM2.5（免费、无需 key）
  * - k20 屏：TCP 探活 phoneHost:phonePort
+ * - dsh err log：插件激活失败自检（只看本次启动段，面板 405 一类事故的哨兵）
  *
  * 久坐：快照里的 idle_sec（键鼠空闲秒数）。没有这个字段就只当不知道，
  * 不当成已经休息。空闲满 5 分钟清零。0 分钟 = 不提醒。
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import { open } from 'node:fs/promises'
 import { connect as netConnect, type Socket } from 'node:net'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { AlertGate, inQuietHours, SedentaryWatch, Sustained } from './gates.ts'
+import {
+  activationAlertText,
+  AlertGate,
+  inQuietHours,
+  scanActivationFailures,
+  SedentaryWatch,
+  Sustained,
+  type ActivationScan,
+} from './gates.ts'
 import { createNotifyClient, type NotifyClient } from './notify.ts'
 import { Config, type KeeperWatchConfig } from './config.ts'
 import { applyWatchOverrides, readWatchOverridesSync } from './overrides.ts'
@@ -52,6 +62,8 @@ interface WatcherDeps extends Fetchers {
   fetchSnapshot(): Promise<HubSnapshot | null>
   phoneAlive(): Promise<boolean>
   notify: NotifyClient
+  /** err log 本次启动段的激活失败扫描；null = 读不到（没配/文件没了），跳过 */
+  readActivationFailures(): Promise<ActivationScan | null>
 }
 
 export interface Watcher {
@@ -64,6 +76,8 @@ const AIR_CHECK_MS = 5 * 60_000
 const AIR_SUSTAINED_SEC = 600
 // 桥发送失败的重试冷静期：别每个 tick 都往挂掉的桥上撞
 const SEND_RETRY_MS = 10 * 60_000
+// 激活自检只读 err log 尾部（本次启动段足够），防日志涨了之后每拍全量读
+const ACTIVATION_TAIL_BYTES = 256 * 1024
 
 /** 判定核心（纯逻辑，测试可直接驱动）。
  *
@@ -82,6 +96,10 @@ export function createWatcher(config: KeeperWatchConfig, deps: WatcherDeps, log?
   let lastWeatherCheck = 0
   let lastAirCheck = 0
   const sendFailAt = new Map<string, number>()
+  // 激活自检：bootCount 变了（重启）就允许重报；签名只在真的说出去之后记账，
+  // 被免打扰/配额拦下的下一拍还会再试。
+  let lastBootCount = -1
+  let lastActivationReported = ''
 
   function say(key: string, text: string, now: Date): void {
     const at = now.getTime()
@@ -171,6 +189,32 @@ export function createWatcher(config: KeeperWatchConfig, deps: WatcherDeps, log?
         sustained.clear('phone_offline')
       }
 
+      // —— 插件激活自检（扫 err log 本次启动段；面板 405 一类事故的哨兵）——
+      try {
+        const scan = await deps.readActivationFailures()
+        if (scan && scan.bootCount > 0) {
+          if (scan.bootCount !== lastBootCount) {
+            lastBootCount = scan.bootCount
+            lastActivationReported = ''
+          }
+          const signature = scan.plugins.join(',')
+          if (scan.plugins.length > 0 && signature !== lastActivationReported) {
+            const text = activationAlertText(scan.plugins)
+            void gate
+              .alert('activation', now, () => send(text))
+              .then((d) => {
+                if (d.said) {
+                  lastActivationReported = signature
+                  log?.info('已提醒 [activation]：%s', text)
+                }
+              })
+              .catch(() => {})
+          }
+        }
+      } catch {
+        // 日志读不到/扫描出错不碍事，别的闸照走
+      }
+
       // —— 天气突变（半小时看一眼）。间隔跟 tick 时钟走，测试注入的 now 才管得住。
       const tickAt = now.getTime()
       if (config.weatherEnabled && tickAt - lastWeatherCheck >= WEATHER_CHECK_MS) {
@@ -240,7 +284,18 @@ export function apply(ctx: Context, config: KeeperWatchConfig): void {
     }
   }
 
-  const watcher = createWatcher(live, { fetchHourly, fetchPm25, fetchSnapshot, phoneAlive, notify }, ctx.logger('keeper-watch'))
+  const activationLog = config.activationLogPath.trim() || join(homedir(), '.dsh', 'logs', 'dsh-web.err.log')
+  async function readActivationFailures(): Promise<ActivationScan | null> {
+    if (!config.activationAlert) return null
+    const text = await tailFile(activationLog, ACTIVATION_TAIL_BYTES)
+    return text === null ? null : scanActivationFailures(text)
+  }
+
+  const watcher = createWatcher(
+    live,
+    { fetchHourly, fetchPm25, fetchSnapshot, phoneAlive, notify, readActivationFailures },
+    ctx.logger('keeper-watch'),
+  )
   refreshLive()
   watcher.tickOnce().catch(() => {}) // 起步先跑一轮，错了不挡装载
   const timer = setInterval(() => {
@@ -277,4 +332,25 @@ function connectTcp(host: string, port: number, timeoutMs: number): Promise<Sock
       reject(err)
     })
   })
+}
+
+/** 只读文件尾部 maxBytes（激活扫描不需要全量，日志涨了也不怕）。读不到回 null。 */
+async function tailFile(path: string, maxBytes: number): Promise<string | null> {
+  let fh
+  try {
+    fh = await open(path, 'r')
+  } catch {
+    return null
+  }
+  try {
+    const size = (await fh.stat()).size
+    const start = Math.max(0, size - maxBytes)
+    const buf = Buffer.alloc(size - start)
+    await fh.read(buf, 0, buf.length, start)
+    return buf.toString('utf8')
+  } catch {
+    return null
+  } finally {
+    await fh.close()
+  }
 }

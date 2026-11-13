@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { airAlertText, pm25Grade, upcomingHours, weatherChangeText, wmoCondition } from '../src/weather.ts'
 import { createWatcher, type Watcher } from '../src/index.ts'
+import { activationAlertText, scanActivationFailures, type ActivationScan } from '../src/gates.ts'
 import type { KeeperWatchConfig } from '../src/config.ts'
 
 function at(h: number, m = 0): Date {
@@ -83,6 +84,8 @@ describe('createWatcher 端到端（假数据驱动）', () => {
       phoneOfflineSustainedSec: 300,
       notifyUrl: 'http://127.0.0.1:47832/notify',
       notifyTokenPath: '/tmp/nonexistent-notify.json',
+      activationAlert: true,
+      activationLogPath: '',
       tickSec: 60,
       ...overrides,
     }
@@ -93,24 +96,28 @@ describe('createWatcher 端到端（假数据驱动）', () => {
     sent: string[]
     setSnapshot(s: unknown): void
     setPhone(alive: boolean): void
+    setActivation(s: ActivationScan | null): void
   }
 
   function makeHarness(cfg: Partial<KeeperWatchConfig> = {}): Harness {
     const sent: string[] = []
     let snapshot: unknown = null
     let phone = true
+    let activation: ActivationScan | null = null
     const watcher = createWatcher(makeConfig(cfg), {
       fetchSnapshot: async () => snapshot as never,
       phoneAlive: async () => phone,
       notify: { send: async (t) => (sent.push(t), true) },
       fetchHourly: async () => ({ currentCelsius: 14, currentCode: 0, hourly: { time: [], celsius: [], code: [], windKmh: [] } }),
       fetchPm25: async () => 20,
+      readActivationFailures: async () => activation,
     })
     return {
       watcher,
       sent,
       setSnapshot: (s) => (snapshot = s),
       setPhone: (a) => (phone = a),
+      setActivation: (s) => (activation = s),
     }
   }
 
@@ -197,6 +204,7 @@ describe('createWatcher 端到端（假数据驱动）', () => {
       notify: { send: async (t) => (sent.push(t), true) },
       fetchHourly: async () => ({ currentCelsius: 14, currentCode: 0, hourly: { time: [], celsius: [], code: [], windKmh: [] } }),
       fetchPm25: async () => 20,
+      readActivationFailures: async () => null,
     })
     await watcher.tickOnce(at(10)) // 炸：静默
     expect(sent).toHaveLength(0)
@@ -215,6 +223,7 @@ describe('createWatcher 端到端（假数据驱动）', () => {
       notify: { send: async (t) => (sent.push(t), true) },
       fetchHourly: async () => ({ currentCelsius: 14, currentCode: 0, hourly: { time: [], celsius: [], code: [], windKmh: [] } }),
       fetchPm25: async () => 20,
+      readActivationFailures: async () => null,
     })
     const t0 = at(10)
     await watcher.tickOnce(t0)
@@ -233,6 +242,7 @@ describe('createWatcher 端到端（假数据驱动）', () => {
       notify: { send: async (t) => (sent.push(t), true) },
       fetchHourly: async () => ({ currentCelsius: 14, currentCode: 0, hourly: { time: [], celsius: [], code: [], windKmh: [] } }),
       fetchPm25: async () => 120,
+      readActivationFailures: async () => null,
     })
     const t0 = at(10)
     await watcher.tickOnce(t0)
@@ -251,6 +261,7 @@ describe('createWatcher 端到端（假数据驱动）', () => {
       notify: { send: async (t) => (sent.push(t), true) },
       fetchHourly: async () => ({ currentCelsius: 14, currentCode: 0, hourly: { time: [], celsius: [], code: [], windKmh: [] } }),
       fetchPm25: async () => 20,
+      readActivationFailures: async () => null,
     })
     const t0 = at(10)
     await watcher.tickOnce(t0)
@@ -266,4 +277,82 @@ describe('createWatcher 端到端（假数据驱动）', () => {
     await watcher.tickOnce(new Date(t0.getTime() + 181 * 60_000))
     expect(sent).toHaveLength(1)
   })
+describe('激活自检哨兵（watcher 集成）', () => {
+  it('失败名单报一次；同拍重扫不重发；重启（bootCount 变）才再报', async () => {
+    const h = makeHarness()
+    const now = at(10)
+    h.setActivation({ bootCount: 1, plugins: ['dsh-keeper-console'] })
+    await h.watcher.tickOnce(now)
+    expect(h.sent).toHaveLength(1)
+    expect(h.sent[0]).toContain('dsh-keeper-console')
+
+    await h.watcher.tickOnce(new Date(now.getTime() + 60_000))
+    expect(h.sent).toHaveLength(1) // 同一次启动、同一份名单：闭嘴
+
+    // 名单变长（另一个插件也炸了）：AlertGate 一天一次拦住，不重复轰炸
+    h.setActivation({ bootCount: 1, plugins: ['dsh-keeper-console', 'dsh-shorekeeper-reading'] })
+    await h.watcher.tickOnce(new Date(now.getTime() + 120_000))
+    expect(h.sent).toHaveLength(1)
+
+    // 重启后还在坏：新的一天语境之外也允许再报一次？不——gate 一天一次；
+    // 这里换到第二天验证重启确实重报
+    const tomorrow = at(10)
+    tomorrow.setDate(tomorrow.getDate() + 1)
+    h.setActivation({ bootCount: 2, plugins: ['dsh-keeper-console', 'dsh-shorekeeper-reading'] })
+    await h.watcher.tickOnce(tomorrow)
+    expect(h.sent).toHaveLength(2)
+    expect(h.sent[1]).toContain('dsh-shorekeeper-reading')
+  })
+
+  it('读不到日志（null）→ 静默跳过；修好（空名单）→ 不再提', async () => {
+    const h = makeHarness()
+    const now = at(10)
+    h.setActivation(null)
+    await h.watcher.tickOnce(now)
+    expect(h.sent).toHaveLength(0)
+
+    h.setActivation({ bootCount: 1, plugins: [] })
+    await h.watcher.tickOnce(new Date(now.getTime() + 60_000))
+    expect(h.sent).toHaveLength(0)
+  })
 })
+})
+
+describe('scanActivationFailures（err log 本次启动段）', () => {
+  const BOOT = 'dsh web: listening on 10.14.14.117 over plain HTTP; restrict this port to a trusted proxy or network\n'
+
+  it('提取本次启动段里激活失败的插件名（去重保序）', () => {
+    const log = [
+      BOOT,
+      'dsh-keeper-console (dsh-keeper-console): Error: cannot get property "webServer" without inject',
+      '    at new apply (file:///x/lib/index.js:390:18)',
+      'dsh-shorekeeper-reading (dsh-shorekeeper-reading): Error: cannot get property "webServer" without inject',
+      'dsh-keeper-console (dsh-keeper-console): Error: cannot get property "webServer" without inject',
+    ].join('\n')
+    expect(scanActivationFailures(log)).toEqual({ bootCount: 1, plugins: ['dsh-keeper-console', 'dsh-shorekeeper-reading'] })
+  })
+
+  it('只看最后一个启动标记之后：旧账不重翻', () => {
+    const old = BOOT + 'dsh-keeper-console (dsh-keeper-console): Error: old boot failure\n'
+    const log = old + BOOT
+    expect(scanActivationFailures(log)).toEqual({ bootCount: 2, plugins: [] })
+  })
+
+  it('没有启动标记（轮转截断/标记变了）→ 保守空结果', () => {
+    expect(scanActivationFailures('dsh-x (dsh-x): Error: boom\ndsh: warning: 1 entry did not activate')).toEqual({
+      bootCount: 0,
+      plugins: [],
+    })
+  })
+
+  it('warning 行在但抓不到插件名 → 兜底占位', () => {
+    const log = BOOT + 'dsh: warning: 2 entries did not activate\n'
+    expect(scanActivationFailures(log).plugins).toEqual(['（没抓到名字，看日志）'])
+  })
+
+  it('文案带名单', () => {
+    expect(activationAlertText(['a', 'b'])).toContain('2 个插件')
+    expect(activationAlertText(['a', 'b'])).toContain('a、b')
+  })
+})
+
