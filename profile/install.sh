@@ -4,7 +4,7 @@
 # 前置：macOS（Mac Mini）；homebrew；git
 # 产出：dsh 装好、shorekeeper profile 建好、4 个自写插件链接进 profile、
 #       生态插件按《替代决策清单》安装并钉版本（含微信入口 dsh-plugin-weixin+消毒 patch；
-#       自写 wechat 桥按 T6 v2 决策归档，不再装机）。
+#       自写 wechat 桥已从仓库删除，入口是 dsh-plugin-weixin）。
 set -euo pipefail
 
 DSH_VERSION="0.2.1-rc.5"          # 方案钉死；升级先跑 docs/compat-matrix.md
@@ -45,7 +45,6 @@ for pkg in \
   dsh-vitals@0.1.19 \
   '@doitian/dsh-music@1.2.0' \
   dsh-voice-mode@0.7.34 \
-  dsh-tavern@2.7.26 \
   dsh-mijia-sidebar@1.0.1 \
   feiyu-memory@4.0.2 \
   dsh-calendar@0.14.3 \

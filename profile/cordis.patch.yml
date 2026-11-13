@@ -5,8 +5,9 @@
 plugins:
   dsh-shorekeeper-k20:
     host: http://k20.lan          # k20 安卓端（背景面 BackgroundServer）
-    hubHost: http://127.0.0.1     # Hub 瘦身地址（W6 实机：Hub 在 Mac 本机，与 k20 不同机；缺省回落 host）
+    hubHost: http://127.0.0.1     # 只给还没切到本进程网关的工具兜底；屏的在线位走 /v1/desk，不再拉旧 hub
     port: 17890
+    companionUpstream: ''         # chat/memory 不转发到旧 hub
     token: change-me-to-a-long-random-string   # ⏸ 真机填实际值（k20 设置页与 hub.yaml 同源）
     backgroundPort: 17920
     captionScale: 100
@@ -20,13 +21,6 @@ plugins:
 
   dsh-shorekeeper-reading:
     dataDir: ''                   # 缺省 $DSH_HOME/data/reading
-
-  dsh-shorekeeper-wechat:
-    bridgeBaseUrl: http://win.lan:17901
-    bridgeToken: ''
-    maskNames: true
-    sendEnabled: false            # 默认只读不发
-    sendWhitelist: []
 
   # ⏸ 生态插件段以 T1 验证结论为准；dsh-tts 的守岸人音色接线（T4 决策）：
   # @goodandready/dsh-tts:
