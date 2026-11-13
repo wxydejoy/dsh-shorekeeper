@@ -134,10 +134,10 @@
 
 | 脚本 | 用途 | 注意 |
 |---|---|---|
-| `scripts/loopback-forward.py` | 127.0.0.1:3091 → LAN:3090 TCP 转发 | 浏览器语音 loopback 入口；**前台进程，会话结束即停**，长期用要挂 launchd |
-| `scripts/tls-forward.py` | 0.0.0.0:3092 自签 TLS → LAN:3090 | 局域网语音前门（https），证书 `~/.config/dsh-web-tls/`（10 年）；同上未挂 launchd |
+| `scripts/loopback-forward.py` | 127.0.0.1:3091 → LAN:3090 TCP 转发 | 浏览器语音 loopback 入口；**已挂 launchd `cn.weiekko.dsh-web-loopback-forward`**（2026-11-13） |
+| `scripts/tls-forward.py` | 0.0.0.0:3092 自签 TLS → LAN:3090 | 局域网语音前门（https），证书 `~/.config/dsh-web-tls/`（10 年）；**已挂 launchd `cn.weiekko.dsh-web-tls-forward`**（2026-11-13） |
 
-**共同欠账**：两个转发器都跑在临时进程里，重启 Mac / 会话结束就没了——要长期用说一声挂 launchd。
+**欠账已清（2026-11-13）**：两个转发器曾一直跑临时进程，Mac 重启后全灭——安卓「语音老是接不着」实为 3092 拒连。已双双挂 launchd（RunAtLoad+KeepAlive，plist 在 ~/Library/LaunchAgents/，日志 ~/.dsh/logs/dsh-web-{tls,loopback}-forward.*.log），杀进程自愈、扛重启。安卓语音入口 = `https://10.14.14.117:3092`（自签证书点一次「继续访问」；cookie 按 host 共享，3090 激活的会话在 3092 直接生效）。
 
 ---
 
