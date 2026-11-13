@@ -33,14 +33,14 @@
 
 ### dsh-shorekeeper-reading —— 阅读与听书
 
-**功能**：书架/进度/笔记/问书工具（`reading.shelf / progress / note / ask`）+ 听书三件（`reading.listen / stop / resume`，直连 keeper-tts 服务端喇叭播放）+ **网页侧栏「小说朗读」面板**（2026-11-05：client.js + `/reading-panel` RPC，books/status/play/stop，与工具面共用同一 ListenEngine，断点互通；语速/定时可调）。
+**功能**：书架/进度/笔记/问书工具（`reading_shelf / progress / note / ask`）+ 听书三件（`reading_listen / stop / resume`，直连 keeper-tts 服务端喇叭播放）+ **网页侧栏「小说朗读」面板**（2026-11-05：client.js + `/reading-panel` RPC，books/status/play/stop，与工具面共用同一 ListenEngine，断点互通；语速/定时可调）。
 
 **依赖链**：数据目录与 migration/export_books.py 落点一致；听书走 keeper-tts :18100。
 
 **缺点 / 问题点**：
 - 听书占用 keeper-tts 的**服务端喇叭**（Mac 出声），与 TTS 试听/故事互抢喇叭——同一时刻只有一个声源，没有混音/排队。
 - 长文本分句朗读的进度记忆依赖 shelf 数据，中途崩溃可能丢朗读位置。
-- `reading.ask` 走模型上下文，大书摘要有限流（longReply truncate 语义在 dsh-tts 侧）。
+- `reading_ask` 走模型上下文，大书摘要有限流（longReply truncate 语义在 dsh-tts 侧）。
 
 ---
 
@@ -55,7 +55,7 @@
 **缺点 / 问题点**：
 - 久坐提醒**没做**：键鼠 idle 是 hub 内部量不外露，dsh 侧拿不到真值（诚实标注，等 idle 进快照再补）。
 - Open-Meteo 免费源，国内网络偶发超时（有重试冷静期 10min）。
-- 闸门热重建（面板改免打扰/配额）会重置当日配额计数——改配置即重置，偏保守但要注意。
+- 闸门参数热更新走 `AlertGate.configure`，当日配额和「今天说过」保留；PM2.5 每 5 分钟采样一次，连续坏满 10 分钟才开口。
 - notify 桥挂掉时 send 失败只进冷静期重试，没有「桥挂了」本身的告警（自己瞎了不知道）。
 
 ### dsh-keeper-agenda —— 日程 ICS
@@ -75,12 +75,12 @@
 
 ### dsh-keeper-voice —— 声音工具面
 
-**功能**：`keeper.status`（TTS 状态）/ `keeper.voice_test`（试听）/ `keeper.stop`（打断朗读兜底）/ `keeper.noise`（白噪音 rain/waves/fan/brown，1-180min）。说话主链路是 dsh-tts custom provider 接线（零代码），本插件只做工具。
+**功能**：`keeper_status`（TTS 状态）/ `keeper_voice_test`（试听）/ `keeper_stop`（打断朗读兜底）/ `keeper_noise`（白噪音 rain/waves/fan/brown，1-180min）。说话主链路是 dsh-tts custom provider 接线（零代码），本插件只做工具。
 
 **依赖链**：keeper-tts :18100（`/v1/noise` 白噪音端点）。
 
 **缺点 / 问题点**：
-- `keeper.noise` 与听书/朗读共用服务端喇叭，会互相打断（同 reading 的声源独占问题）。
+- `keeper_noise` 与听书/朗读共用服务端喇叭，会互相打断（同 reading 的声源独占问题）。
 - 试听文本固定 sampleText，不能任意念（要任意念走 speak_text）。
 
 ### keeper-tts（dock 仓库 companion/tts，非本仓库）
@@ -109,7 +109,7 @@
 
 **缺点 / 问题点**：
 - patch 文件手术是行级正则：若手工把 patch 改成异常缩进/多行值，flip 可能找不到锚点报 no_key（会如实报错，不会写坏文件）。
-- 数字输入（每日上限/每分钟上限）留空 = 用插件 Config 基线，面板不显示基线值（显示空）。
+- 开关和数字显示的是生效值（profile patch 基线叠 `keeper-settings.json` 覆盖）。两个朗读开关打开其中一个时，另一个会被关掉。
 - 语音模式内朗读开关写 voice-mode 的 readAloud——「朗读面归 dsh-tts」决策下默认应保持 off。
 
 ---
@@ -127,12 +127,6 @@
 - 「no adapter zhipu」根因在 dsh 核心 LlmRuntime 注册窗口（插件 reload 瞬间 / apply 时 profiles 空不补注册），插件侧只做了症状拦截；复发观察口：err.log grep "configuration conflicts"。
 - notify 桥（127.0.0.1:47832）的发送不计入微信 metrics，验证送达别看 metrics。
 - 订阅（subscriptions.json）早间简报 07:30 / 周报周日 21:30 挂 e7a07db；死号 339bb 已退役。
-
-### dsh-shorekeeper-wechat —— 微信桥（旧路线）
-
-**功能**：wcferry Windows 挂机侧小服务的 dsh 工具面（桥契约 docs/bridge-contract.md）。
-
-**缺点 / 问题点**：依赖 Windows 挂机机（wrobot.local）在线，**当前整机离线**，整条链路闲置；与 dsh-plugin-weixin（主链路）并行存在，注意别混淆两条「微信」线。
 
 ---
 

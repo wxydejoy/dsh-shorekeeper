@@ -8,7 +8,7 @@ FAIL=0
 
 say() { printf '%s\n' "$*"; }
 
-for p in dsh-shorekeeper-desk-mi dsh-shorekeeper-k20 dsh-keeper-voice dsh-shorekeeper-reading dsh-shorekeeper-wechat; do
+for p in dsh-shorekeeper-desk-mi dsh-shorekeeper-k20 dsh-keeper-voice dsh-shorekeeper-reading dsh-keeper-watch dsh-keeper-agenda; do
   cd "$ROOT/plugins/$p"
   if [ ! -d node_modules ]; then
     npm install --no-fund --no-audit --legacy-peer-deps >/dev/null 2>&1
@@ -30,9 +30,11 @@ cd "$ROOT/migration"
 O=$(python3 -m unittest discover -s tests 2>&1 | grep -E '^(OK|FAILED)' | head -1)
 if echo "$O" | grep -q '^OK'; then say "✅ migration $O"; else say "❌ migration ${O:-无输出}"; FAIL=1; fi
 
-cd "$ROOT/plugins/dsh-shorekeeper-wechat/bridge/tests"
-O=$(python3 -m unittest test_bridge 2>&1 | grep -E '^(OK|FAILED)' | head -1)
-if echo "$O" | grep -q '^OK'; then say "✅ bridge $O"; else say "❌ bridge ${O:-无输出}"; FAIL=1; fi
+if node --test "$ROOT/plugins/dsh-keeper-console/test/patch.test.mjs" >/tmp/keeper-console-test.out 2>&1; then
+  say "✅ keeper-console node:test"
+else
+  say "❌ keeper-console node:test"; tail -20 /tmp/keeper-console-test.out; FAIL=1
+fi
 
 cd "$ROOT/plugins/dsh-shorekeeper-desk-mi/py"
 O=$(python3 -m unittest test_mi_bridge 2>&1 | grep -E '^(OK|FAILED)' | head -1)

@@ -24,7 +24,7 @@
 
 | 目录                       | 说明                                                                                                                |
 | ------------------------ | ----------------------------------------------------------------------------------------------------------------- |
-| [plugins/](plugins/)     | 自写插件：`dsh-shorekeeper-k20`（安卓屏驱动+k20 直链网关）、`dsh-keeper-voice`（克隆音色 provider）、`dsh-shorekeeper-reading`（阅读）、`dsh-shorekeeper-desk-mi`（时钟+米家薄工具层）；`dsh-shorekeeper-wechat` 已归档（T6 v2：入口归 dsh-plugin-weixin） |
+| [plugins/](plugins/)     | 自写插件：`dsh-shorekeeper-k20`（安卓屏驱动+k20 直链网关）、`dsh-keeper-voice`（克隆音色工具面）、`dsh-shorekeeper-reading`（阅读）、`dsh-shorekeeper-desk-mi`（时钟+米家薄工具层）、`dsh-keeper-watch`（异动提醒）、`dsh-keeper-agenda`（ICS 日程）、`dsh-keeper-console`（设置面板）。微信入口是生态件 dsh-plugin-weixin |
 | [content/](content/)     | 守岸人角色卡 + 世界书 + 预设（内容工程，宿主是 dsh-tavern）                                                                            |
 | [profile/](profile/)     | 生态插件安装清单 + cordis.patch.yml + 一键安装脚本                                                                              |
 | [migration/](migration/) | 岸亭 diary/weekly/books 数据导出导入脚本（一次性）                                                                               |
@@ -47,8 +47,6 @@ dsh-mijia-sidebar 1.0.1（米家面板；无 agent 工具面，控灯/读数走 
 | dsh-keeper-voice    | keeper-tts（Qwen3-TTS 克隆音色）接入语音链路，打通打断闭环。**T1 变更**：voice-mode 的 ttsEngine 是封闭枚举（edge/vits/kokoro），无自定义 provider 扩展点（D13）——T4 全量自写语音链路或 fork voice-mode，二选一由 T4 定 |
 | dsh-shorekeeper-reading | 阅读：书架、进度、摘抄、听书（岸亭 books.py 重生）                            |
 | dsh-shorekeeper-desk-mi | 时钟 `desk_now` + 米家薄工具层（只读 list/sensor；控灯 `desk_mi_light` 走 controlEnabled 闸门）。T9 done，check-all 全绿 |
-| dsh-shorekeeper-wechat  | **已归档**（T6 v2 决策：微信入口由生态件 dsh-plugin-weixin 承担，2026-11-04 21:21 实证；桥本体 12+15 测绿留档不再迁移） |
-
 ## 开发规范（要点）
 
 - 插件是 TS 模块，入口 `apply(ctx)`，注册工具前必须 `export const inject = ['tools']`；Config 用 Schemastery schema，host 侧 `ctx.settings.installSection()` 配对设置卡片

@@ -47,7 +47,7 @@
 | `content/shorekeeper-card/` | T3 | 角色卡 + 世界书 + 预设（人格内容工程，含周报/仪式 skill；周报数据源 memory） |
 | `plugins/dsh-keeper-voice` | T4 | 克隆音色注册为 TTS provider + 打断闭环 |
 | `plugins/dsh-shorekeeper-reading` | T5 | 阅读：书架、进度、摘抄、听书（books.py 重生） |
-| `plugins/dsh-shorekeeper-wechat` | T6 | 微信接入：摘要/代读/审批代发——**v2 决策改道**：入口由生态件 dsh-plugin-weixin 承担（2026-11-04 21:21 微信关台灯全链路实证），自写桥本体（12+15 测绿）归档不再迁移 |
+| ~~`plugins/dsh-shorekeeper-wechat`~~ | T6 | 2026-11-05 从仓库删除。入口是生态件 dsh-plugin-weixin（2026-11-04 21:21 微信关台灯全链路实证） |
 | `profile/` | T1/T8 | 生态插件清单 + cordis.patch.yml + 一键安装 |
 
 > 2026-11-02 名单修订：dsh-desk-senses、dsh-desk-life 已砍（前者归 k20，后者由生态件 + skill 覆盖）。

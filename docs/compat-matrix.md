@@ -10,7 +10,6 @@
 | @deepseek-ai/dsh | 0.2.1-rc.5 | 各插件 package.json `engines.dsh` + install.sh |
 | @deepseek-ai/dsh-tools | 0.2.1-rc.5 | 插件 devDeps（含全套 peer，见 T4 验收记录） |
 | keeper-tts / mlx-audio | 锁 0.5.0 | dock/companion/tts pyproject（README：0.6.x 无收益不冒 API 风险） |
-| 微信客户端（桥用） | 3.9.11.25 | T6 桥部署文档（wcferry 配套） |
 
 ## 兼容矩阵（dsh 版本 × 组件）
 
@@ -27,6 +26,6 @@
 ## 升级流程（每次）
 
 1. 新开 `bump/dsh-<ver>` 分支，改四件套版本钉
-2. 跑全部插件 `npm run typecheck && npm test`（k20 24 / keeper-voice 11 / reading 10 / wechat 15）
+2. 跑 `bash scripts/check-all.sh`
 3. 真机走查 docs/e2e-scenarios.md 至少 1/6/7/10 四条
 4. 填矩阵列，绿则合入并更新 install.sh；红则记录偏差与豁免（dsh 的 version-exemptions 机制）

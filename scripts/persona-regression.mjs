@@ -15,8 +15,8 @@
  * tavern 面板运行时注入格式的差异（世界书关键词触发的 token 预算等）仍归 web 端，
  * 断言三类：control（控制句不剧情化）/ persona（称呼与声线）/ leak（无脚手架泄漏）。
  *
- * 凭据：ZHIPU_API_KEY 从全局 refs（~/.dsh/.credentials.yaml）读出后只进子进程
- * 环境变量，不写文件、不进日志。
+ * 凭据：SCNET_API_KEY 从全局 refs（~/.dsh/.credentials.yaml）读出后只进子进程
+ * 环境变量，不写文件、不进日志。headless 不读凭据库，只认这个环境变量。
  */
 import { readFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -100,11 +100,11 @@ const writeOverlay = (msg) => {
 }
 
 // ---------- 4. 凭据（refs 全局文件 → 子进程 env，不落盘） ----------
-function readZhipuKey() {
+function readScnetKey() {
   const p = join(homedir(), '.dsh/.credentials.yaml')
   const text = readFileSync(p, 'utf8')
-  const m = text.match(/^ {2}ZHIPU_API_KEY:[ \t]*"?([^\s"]+)"?[ \t]*$/m)
-  if (!m) throw new Error('~/.dsh/.credentials.yaml 的 refs 里找不到 ZHIPU_API_KEY（行格式与预期不符）')
+  const m = text.match(/^ {2}SCNET_API_KEY:[ \t]*"?([^\s"]+)"?[ \t]*$/m)
+  if (!m) throw new Error('~/.dsh/.credentials.yaml 的 refs 里找不到 SCNET_API_KEY（行格式与预期不符）')
   return m[1]
 }
 
@@ -120,7 +120,7 @@ const GLOBAL_LEAK = [
 ]
 const runOnce = (msg) => {
   writeOverlay(msg)
-  const env = { ...process.env, ZHIPU_API_KEY: readZhipuKey() }
+  const env = { ...process.env, SCNET_API_KEY: readScnetKey() }
   delete env.NODE_OPTIONS // WorkBuddy/zcode shim（brokered-fs）会劫持 dsh 存储（T7 实证坑）
   const r = spawnSync(DSH, ['--profile', PROFILE, '--patch', overlayPath, msg], {
     encoding: 'utf8', timeout: 120_000, env, cwd: tmpDir,
