@@ -39,7 +39,7 @@ export function createKeeperTools(deps: KeeperToolDeps): ToolDefinition[] {
   const { client, config } = deps
 
   const status = defineTool({
-    name: 'keeper.status',
+    name: 'keeper_status',
     description: '查看 keeper-tts 服务状态：模型、克隆音色、语速、就绪度。排查「她怎么不说话」从这里开始。',
     parameters: {},
     output: {
@@ -67,7 +67,7 @@ export function createKeeperTools(deps: KeeperToolDeps): ToolDefinition[] {
   })
 
   const voiceTest = defineTool({
-    name: 'keeper.voice_test',
+    name: 'keeper_voice_test',
     description: '用守岸人的克隆音色合成一段试听（OpenAI 兼容 /v1/audio/speech）。返回音频字节与首包延迟；不出本机喇叭，由 dsh-tts 播放器播。',
     parameters: {
       text: { type: 'string', description: '试听文本；缺省用插件设置里的 sampleText' },
@@ -99,7 +99,7 @@ export function createKeeperTools(deps: KeeperToolDeps): ToolDefinition[] {
   })
 
   const stop = defineTool({
-    name: 'keeper.stop',
+    name: 'keeper_stop',
     description: '立刻打断 keeper-tts：清掉本机喇叭播放队列、作废在途合成（幂等）。语音会话里的 barge-in 由 dsh-tts 播放器先行，这里是兜底。',
     parameters: {},
     output: {
@@ -120,7 +120,7 @@ export function createKeeperTools(deps: KeeperToolDeps): ToolDefinition[] {
   const NOISE_LABELS: Record<string, string> = { rain: '雨声', waves: '海浪', fan: '风扇', brown: '白噪音' }
 
   const noise = defineTool({
-    name: 'keeper.noise',
+    name: 'keeper_noise',
     description:
       '放/停白噪音（本机喇叭）：雨声/海浪/风扇/白噪音，到点自动淡出（默认 30 分钟，最长 180）。适合「放点白噪音」「雨声助眠」「把声音停了」。写 off 或不传 name 就是停。',
     parameters: {

@@ -79,7 +79,7 @@ describe('KeeperClient', () => {
     const refused = new KeeperClient({ baseUrl: 'http://127.0.0.1:9' }) // discard 端口，立即 RST
     await expect(refused.speech({ input: '在吗' })).rejects.toMatchObject({ code: 'network' })
     const tools = createKeeperTools({ client: refused, config: { speed: 1.0, sampleText: 'x' } })
-    const result = (await tools.find((t) => t.name === 'keeper.voice_test')?.execute({ text: '在吗' }, {} as never)) as {
+    const result = (await tools.find((t) => t.name === 'keeper_voice_test')?.execute({ text: '在吗' }, {} as never)) as {
       ok: false
       degraded: string
     }
@@ -91,7 +91,7 @@ describe('KeeperClient', () => {
     // 把 baseUrl 指到 mock 的未知路径根：speech 打到不存在的路由 → 404
     const wrongRoute = new KeeperClient({ baseUrl: `${mock.url}/nowhere` })
     const tools = createKeeperTools({ client: wrongRoute, config: { speed: 1.0, sampleText: 'x' } })
-    const result = (await tools.find((t) => t.name === 'keeper.voice_test')?.execute({ text: '在吗' }, {} as never)) as {
+    const result = (await tools.find((t) => t.name === 'keeper_voice_test')?.execute({ text: '在吗' }, {} as never)) as {
       ok: false
       degraded: string
     }
@@ -100,22 +100,22 @@ describe('KeeperClient', () => {
 })
 
 describe('keeper 工具面', () => {
-  it('keeper.status 报告就绪与克隆态', async () => {
-    const result = (await byName('keeper.status').execute({}, {} as never)) as { summary: string; ready: boolean }
+  it('keeper_status 报告就绪与克隆态', async () => {
+    const result = (await byName('keeper_status').execute({}, {} as never)) as { summary: string; ready: boolean }
     expect(result.ready).toBe(true)
     expect(result.summary).toContain('克隆=开')
   })
 
-  it('keeper.voice_test 缺省文本走插件设置', async () => {
-    const result = (await byName('keeper.voice_test').execute({}, {} as never)) as { ok: boolean; summary: string }
+  it('keeper_voice_test 缺省文本走插件设置', async () => {
+    const result = (await byName('keeper_voice_test').execute({}, {} as never)) as { ok: boolean; summary: string }
     expect(result.ok).toBe(true)
     expect(mock.speechRequests[0]?.input).toBe('岸边的灯给你留着。')
     expect(result.summary).toContain('首包 123ms')
   })
 
-  it('keeper.voice_test 未就绪 → 优雅降级', async () => {
+  it('keeper_voice_test 未就绪 → 优雅降级', async () => {
     mock.ready = false
-    const result = (await byName('keeper.voice_test').execute({ text: '在吗' }, {} as never)) as {
+    const result = (await byName('keeper_voice_test').execute({ text: '在吗' }, {} as never)) as {
       ok: false
       degraded: string
     }
@@ -123,17 +123,17 @@ describe('keeper 工具面', () => {
     expect(result.degraded).toContain('还没就绪')
   })
 
-  it('keeper.voice_test 被打断 → 降级说明', async () => {
+  it('keeper_voice_test 被打断 → 降级说明', async () => {
     mock.interrupt = true
-    const result = (await byName('keeper.voice_test').execute({ text: '在吗' }, {} as never)) as {
+    const result = (await byName('keeper_voice_test').execute({ text: '在吗' }, {} as never)) as {
       ok: false
       degraded: string
     }
     expect(result.degraded).toContain('打断')
   })
 
-  it('keeper.stop 打通打断', async () => {
-    const result = (await byName('keeper.stop').execute({}, {} as never)) as { ok: boolean }
+  it('keeper_stop 打通打断', async () => {
+    const result = (await byName('keeper_stop').execute({}, {} as never)) as { ok: boolean }
     expect(result.ok).toBe(true)
     expect(mock.stopped).toBe(1)
   })
@@ -144,7 +144,7 @@ describe('keeper 工具面', () => {
       client: new KeeperClient({ baseUrl: mock.url }),
       config: { speed: 1.0, sampleText: 'x' },
     })
-    const result = (await dead.find((t) => t.name === 'keeper.status')?.execute({}, {} as never)) as {
+    const result = (await dead.find((t) => t.name === 'keeper_status')?.execute({}, {} as never)) as {
       ok: false
       degraded: string
     }
@@ -155,9 +155,9 @@ describe('keeper 工具面', () => {
 
 void KeeperRequestError
 
-describe('keeper.noise（F31 白噪音）', () => {
+describe('keeper_noise（F31 白噪音）', () => {
   it('放雨声：透传 name 与 minutes，summary 带时长', async () => {
-    const tool = byName('keeper.noise')
+    const tool = byName('keeper_noise')
     const result = (await tool.execute({ name: 'rain', minutes: 45 }, exec)) as { ok: boolean; summary: string }
     expect(result.ok).toBe(true)
     expect(result.summary).toContain('45 分钟')
@@ -165,21 +165,21 @@ describe('keeper.noise（F31 白噪音）', () => {
   })
 
   it('缺省 minutes：服务端默认 30', async () => {
-    const tool = byName('keeper.noise')
+    const tool = byName('keeper_noise')
     const result = (await tool.execute({ name: 'brown' }, exec)) as { ok: boolean; minutes: number }
     expect(result.ok).toBe(true)
     expect(result.minutes).toBe(30)
   })
 
   it('off：停下', async () => {
-    const tool = byName('keeper.noise')
+    const tool = byName('keeper_noise')
     const result = (await tool.execute({ name: 'off' }, exec)) as { ok: boolean; summary: string }
     expect(result.ok).toBe(true)
     expect(mock.noiseRequests).toEqual([{ name: 'off', minutes: undefined }])
   })
 
   it('乱填 name：schema 枚举先拦，不打服务', async () => {
-    const tool = byName('keeper.noise')
+    const tool = byName('keeper_noise')
     await expect(tool.execute({ name: 'ocean' }, exec)).rejects.toThrow(/rain/)
     expect(mock.noiseRequests).toHaveLength(0)
   })

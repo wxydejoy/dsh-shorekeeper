@@ -9,7 +9,7 @@
 | 工具/能力 | 职责 |
 |---|---|
 | TTS provider 注册 | OpenAI 兼容 `/v1/audio/speech` 桥接到 keeper-tts |
-| `keeper.voice_test` | 试听当前音色/语速 |
+| `keeper_voice_test` | 试听当前音色/语速 |
 | barge-in 桥 | voice-mode 打断事件 → keeper-tts 停播 |
 | 唤醒词链路 | 安卓「小岸」唤醒 vs voice-mode 免提模式，T4 内做决策落地 |
 
