@@ -21,7 +21,7 @@ export interface K20Config {
   serve?: boolean
   /** /health 上报的名字（安卓设置页展示；与旧 hub 的房间名对齐） */
   serverName?: string
-  /** companion 面上游（她的语音链 T3/T4 前在旧 hub）；置空则 companion 整面 404 */
+  /** companion 的 chat/memory/audio 上游。空 = 不转发（旧 hub 已退出这条链） */
   companionUpstream?: string
   /** keeper-tts 服务地址（announce/stop 语音直连，不再借道 hub）；置空则只回执不出声 */
   ttsBaseUrl?: string
@@ -39,7 +39,7 @@ export const Config = Schema.object({
   lockEnabled: Schema.boolean().description('允许熄屏（高危；关闭时 k20.lock 直接拒绝）').default(false),
   serve: Schema.boolean().description('在本实例 webServer 上开 k20 网关路由（T7 直链；需要宿主有 webServer）').default(false),
   serverName: Schema.string().description('/health 上报的名字（安卓设置页展示）').default('study'),
-  companionUpstream: Schema.string().description('companion 面的上游（她的语音链 T3/T4 前在旧 hub）；置空则整面 404').default('http://127.0.0.1:17890'),
+  companionUpstream: Schema.string().description('chat/memory/audio 的上游；留空则这些路由 404，不再转发到旧 hub').default(''),
   ttsBaseUrl: Schema.string().description('keeper-tts 服务地址（announce/stop 语音直连）；置空则只回执不出声').default('http://127.0.0.1:18100'),
   ttsToken: Schema.string().description('keeper-tts Bearer 口令（本机回环可留空）').default(''),
 })

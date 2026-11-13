@@ -3,9 +3,10 @@
  * 在 DSH 宿主的 webServer 上把 lan-protocol v1 服务化，让 k20 app 可以直连 dsh：
  * 现役面六张——/health（免鉴权）、/v1/snapshot（Bearer + 长轮询）、/v1/caption、
  * /v1/phone/layout、/v1/lock、/v1/devices/{id}/command（media 乐观应答，其余 404）。
- * 语音直连：/v1/companion/announce|stop 本地实现，直接打 keeper-tts（:18100 /v1/speak|/v1/stop，
- * hub 退役第一步，不再借道旧 hub）。companion 其余面（chat/memory/audio，大脑还在旧 hub）
- * 代理到 companionUpstream，置空则按协议「可关」语义整面 404。
+ * 语音直连：/v1/companion/announce|stop 本地实现，直接打 keeper-tts（:18100 /v1/speak|/v1/stop）。
+ * /v1/companion/chat 在接上书桌会话时本地回答；没接上、且 companionUpstream 为空时 404。
+ * memory/audio 仍只在 companionUpstream 非空时转发。
+ * pc.online 由 POST /v1/desk 心跳决定。从未收到心跳时，才沿用 setPc 喂进来的样本。
  *
  * 注册方式对齐 dsh-obmc-web 的先例：`inject ['webServer']` 的宿主里
  * `webServer.register({kind: 'exact'|'prefix', path, handler})`，handler 是
@@ -15,8 +16,9 @@
  * - snapshot 只发协议要求的最小集：未接的面（temperature/companion/photos…）整个省略；
  *   pc 是唯一例外——app 的熄屏判定靠 pc.online，缺字段会被读成「还没数据=保持醒着」
  *   （2026-11-05 熄屏回归实证），所以 pc 永远给出，订阅断/过期时退 online:false；
- * - `phone` 只在写过 /v1/phone/layout 后才带上（phone.rev 恒 0；带默认外观有把
- *   真机本地设置打回出厂的风险，等 W6 真机确认 app 的 rev 语义后再放开）；
+ * - `phone` 来自真 hub 快照（控制台主屏布局在这里）。本面只在 POST /v1/phone/layout
+ *   且 rev 更高时盖住 layout；从没收到 phone、也没写过布局时整段省略
+ *   （带默认外观有把真机本地设置打回出厂的风险）；
  * - media 没有真实源，只做命令乐观应答（协议明文允许「可用上次命令的乐观值」）；
  * - 鉴权用插件 config.token（与安卓共享那枚），宿主浏览器登录门不拦插件路由，
  *   所以每条路由自带 Bearer 检查。
@@ -25,11 +27,136 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { request as httpRequest } from 'node:http'
 import type { Context, Disposable } from '@deepseek-ai/cordis'
-import type { CaptionState, CompanionState, LockState, MediaState, PcState, PhoneLayout, PhoneModulePatch, PhotoIds, Snapshot } from './types.ts'
+import type { DeskVoice } from './companion-voice.ts'
+import type { CaptionState, CompanionState, LockState, MediaState, PcState, PhoneLayout, PhoneModulePatch, PhoneState, PhotoIds, Snapshot } from './types.ts'
 
 /** pc 样本的有效期：真 hub 的探针 stale_ms 是 12s，这里放宽到 60s——
  *  长轮询本身 25s 一轮，太紧会把正常的轮询间隔误判成探针断线。 */
 const PC_STALE_MS = 60_000
+/** Windows 小软件心跳过期：超过这个时间没有新拍，pc.online 变 false。不进配置。 */
+const DESK_STALE_MS = 20_000
+
+interface DeskBeat {
+  online?: boolean
+  cpu?: PcState['cpu']
+  memory?: PcState['memory']
+  gpu?: PcState['gpu']
+}
+
+/** 整数百分比变了才算一拍新指标，避免 5 秒一拍把长轮询打醒。 */
+function mergeCpu(prev: PcState['cpu'], next: PcState['cpu']): PcState['cpu'] {
+  if (next === undefined) return prev
+  if (prev === undefined) return next
+  const merged: NonNullable<PcState['cpu']> = { percent: next.percent }
+  const temp = next.temp_celsius ?? prev.temp_celsius
+  if (temp !== undefined) merged.temp_celsius = temp
+  return merged
+}
+
+function mergeMemory(prev: PcState['memory'], next: PcState['memory']): PcState['memory'] {
+  if (next === undefined) return prev
+  if (prev === undefined) return next
+  const merged: NonNullable<PcState['memory']> = { percent: next.percent }
+  const used = next.used_gb ?? prev.used_gb
+  const total = next.total_gb ?? prev.total_gb
+  if (used !== undefined) merged.used_gb = used
+  if (total !== undefined) merged.total_gb = total
+  return merged
+}
+
+function mergeGpu(prev: PcState['gpu'], next: PcState['gpu']): PcState['gpu'] {
+  if (next === undefined) return prev
+  if (prev === undefined) return next
+  const merged: NonNullable<PcState['gpu']> = {}
+  const percent = next.percent ?? prev.percent
+  const temp = next.temp_celsius ?? prev.temp_celsius
+  const vram = next.vram_percent ?? prev.vram_percent
+  const name = next.name ?? prev.name
+  if (percent !== undefined) merged.percent = percent
+  if (temp !== undefined) merged.temp_celsius = temp
+  if (vram !== undefined) merged.vram_percent = vram
+  if (name !== undefined) merged.name = name
+  return merged
+}
+
+function deskMetricKey(beat: DeskBeat): string {
+  const n = (value: number | undefined): number | null => (value === undefined ? null : Math.round(value))
+  return JSON.stringify({
+    c: beat.cpu === undefined ? null : [n(beat.cpu.percent), n(beat.cpu.temp_celsius)],
+    m: beat.memory === undefined ? null : n(beat.memory.percent),
+    g: beat.gpu === undefined ? null : [n(beat.gpu.percent), n(beat.gpu.temp_celsius), beat.gpu.name ?? null],
+  })
+}
+
+function finite(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+function readCpu(value: unknown): PcState['cpu'] | undefined | 'bad' {
+  if (value === undefined) return undefined
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return 'bad'
+  const percent = finite((value as { percent?: unknown }).percent)
+  if (percent === null) return 'bad'
+  const cpu: NonNullable<PcState['cpu']> = { percent }
+  const temp = (value as { temp_celsius?: unknown }).temp_celsius
+  if (temp !== undefined) {
+    const parsed = finite(temp)
+    if (parsed === null) return 'bad'
+    cpu.temp_celsius = parsed
+  }
+  return cpu
+}
+
+function readMemory(value: unknown): PcState['memory'] | undefined | 'bad' {
+  if (value === undefined) return undefined
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return 'bad'
+  const percent = finite((value as { percent?: unknown }).percent)
+  if (percent === null) return 'bad'
+  const memory: NonNullable<PcState['memory']> = { percent }
+  const used = (value as { used_gb?: unknown }).used_gb
+  const total = (value as { total_gb?: unknown }).total_gb
+  if (used !== undefined) {
+    const parsed = finite(used)
+    if (parsed === null) return 'bad'
+    memory.used_gb = parsed
+  }
+  if (total !== undefined) {
+    const parsed = finite(total)
+    if (parsed === null) return 'bad'
+    memory.total_gb = parsed
+  }
+  return memory
+}
+
+function readGpu(value: unknown): PcState['gpu'] | undefined | 'bad' {
+  if (value === undefined) return undefined
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return 'bad'
+  const raw = value as { percent?: unknown; temp_celsius?: unknown; name?: unknown; vram_percent?: unknown }
+  const gpu: NonNullable<PcState['gpu']> = {}
+  if (raw.percent !== undefined) {
+    const parsed = finite(raw.percent)
+    if (parsed === null) return 'bad'
+    gpu.percent = parsed
+  }
+  if (raw.temp_celsius !== undefined) {
+    const parsed = finite(raw.temp_celsius)
+    if (parsed === null) return 'bad'
+    gpu.temp_celsius = parsed
+  }
+  if (raw.vram_percent !== undefined) {
+    const parsed = finite(raw.vram_percent)
+    if (parsed === null) return 'bad'
+    gpu.vram_percent = parsed
+  }
+  if (raw.name !== undefined) {
+    if (typeof raw.name !== 'string' || raw.name.trim() === '') return 'bad'
+    gpu.name = raw.name.trim()
+  }
+  if (gpu.percent === undefined && gpu.temp_celsius === undefined && gpu.vram_percent === undefined && gpu.name === undefined) {
+    return 'bad'
+  }
+  return gpu
+}
 
 /** 协议错误形状：4xx/5xx 一律 {error: {code, message}}（lan-protocol §7） */
 interface HubErrorBody {
@@ -41,6 +168,58 @@ const SCALE_MIN = 60
 const SCALE_MAX = 140
 const RECT_MIN = 0
 const RECT_MAX = 1
+
+function copyModules(modules: PhoneLayout['modules']): PhoneLayout['modules'] {
+  const copy: PhoneLayout['modules'] = {}
+  for (const [id, rect] of Object.entries(modules)) copy[id] = { ...rect }
+  return copy
+}
+
+/** 拖拽会把坐标算出 NaN / 略超 0–1。按错误打回的话 rev 不加，手机一直忽略这版。 */
+function unitInterval(value: unknown): number | undefined {
+  if (value === undefined) return undefined
+  const n = typeof value === 'number' ? value : Number.NaN
+  if (!Number.isFinite(n)) return 0
+  if (n < RECT_MIN) return RECT_MIN
+  if (n > RECT_MAX) return RECT_MAX
+  return n
+}
+
+function assertRect(id: string, rect: PhoneModulePatch): void {
+  if (typeof rect !== 'object' || rect === null || Array.isArray(rect)) {
+    throw new RangeError(`layout.modules.${id} 必须是对象`)
+  }
+  for (const key of ['x', 'y', 'w', 'h'] as const) {
+    const value = rect[key]
+    if (value !== undefined && (typeof value !== 'number' || !Number.isFinite(value) || value < RECT_MIN || value > RECT_MAX)) {
+      throw new RangeError(`layout.modules.${id}.${key} 必须在 ${RECT_MIN}–${RECT_MAX}`)
+    }
+  }
+  if (rect.visible !== undefined && typeof rect.visible !== 'boolean') {
+    throw new RangeError(`layout.modules.${id}.visible 必须是布尔`)
+  }
+  if (rect.chrome !== undefined && typeof rect.chrome !== 'boolean') {
+    throw new RangeError(`layout.modules.${id}.chrome 必须是布尔`)
+  }
+}
+
+function normalizeRect(id: string, rect: PhoneModulePatch): PhoneModulePatch {
+  if (typeof rect !== 'object' || rect === null || Array.isArray(rect)) {
+    throw new RangeError(`layout.modules.${id} 必须是对象`)
+  }
+  const next: PhoneModulePatch = {}
+  const x = unitInterval(rect.x)
+  const y = unitInterval(rect.y)
+  const w = unitInterval(rect.w)
+  const h = unitInterval(rect.h)
+  if (x !== undefined) next.x = x
+  if (y !== undefined) next.y = y
+  if (w !== undefined) next.w = w
+  if (h !== undefined) next.h = h
+  if (typeof rect.visible === 'boolean') next.visible = rect.visible
+  if (typeof rect.chrome === 'boolean') next.chrome = rect.chrome
+  return next
+}
 
 function sendJson(res: ServerResponse, status: number, payload: unknown): void {
   if (res.headersSent) return
@@ -95,6 +274,13 @@ function clipAnnounce(text: string, maxSentences = 3): string {
   const head = sentences.slice(0, maxSentences).join('')
   if (head !== '') return head
   return stripped.length <= 160 ? stripped : stripped.slice(0, 159) + '…'
+}
+
+/** 免唤醒窗。问句多留一点时间。手机不认这个字段时会自己估。 */
+function listenPolicy(text: string): { wait_ms: number; open_ms: number } {
+  const wait = Math.min(text.length * 260 + 1500, 20_000)
+  const open = /[？?]/.test(text) ? 20_000 : 8_000
+  return { wait_ms: wait, open_ms: open }
 }
 
 /** 往 keeper-tts 发一个 JSON POST（语音直连）。永不 reject：连不上/超时/回包异常都 resolve null。 */
@@ -162,9 +348,19 @@ export class K20Gateway {
   private lock: LockState | null = null
   private media: MediaState | null = null
   private layout: PhoneLayout | null = null
+  private layoutListener: ((layout: PhoneLayout) => void) | null = null
+  /** 真 hub 快照里的 phone。本地已经有布局时只借用外观字段，layout 以本地为准。 */
+  private hubPhone: PhoneState | null = null
   private companion: CompanionState | null = null
   private pc: PcState | null = null
   private pcAt = 0
+  /** 从未收到 /v1/desk 时为 null，pc.online 沿用下面的 hub 样本。 */
+  private desk: DeskBeat & { at: number } | null = null
+  /** 在线位上次变化的时刻。心跳重复报同一结果时不刷新。 */
+  private deskChangeIso = ''
+  /** 键鼠空闲秒数。不进 seq：每秒都在涨，不值得把长轮询打醒。 */
+  private idleSec: number | null = null
+  private idleAt = 0
   private photos: PhotoIds | null = null
 
   private readonly hubName: string
@@ -218,27 +414,29 @@ export class K20Gateway {
     return this.media
   }
 
+  /** 落盘回调。adoptLayout 不触发，避免启动时把刚读到的文件再写一遍。 */
+  setLayoutListener(listener: (layout: PhoneLayout) => void): void {
+    this.layoutListener = listener
+  }
+
+  /** 启动时灌入已保存的布局，rev 保持原值（不递增，免得手机把同一版再套一遍）。 */
+  adoptLayout(layout: PhoneLayout): void {
+    this.layout = {
+      rev: layout.rev,
+      modules: copyModules(layout.modules),
+    }
+    this.bump()
+  }
+
   /**
-   * 布局写入：服务端递增 layout.rev，槽位矩形合并（部分给，缺省保留现值）。
-   * 非法矩形（出画布 0–1）抛 RangeError，由路由层转 400。
+   * 协议写入：服务端递增 layout.rev，槽位矩形合并（部分给，缺省保留现值）。
+   * 出了 0–1 的坐标抛 RangeError，路由层转 400。面板保存走 replaceLayout，那边会收进画布。
    */
   applyLayoutPatch(patch: Record<string, PhoneModulePatch>): PhoneLayout {
-    for (const [id, rect] of Object.entries(patch)) {
-      if (typeof rect !== 'object' || rect === null) {
-        throw new RangeError(`layout.modules.${id} 必须是对象`)
-      }
-      for (const key of ['x', 'y', 'w', 'h'] as const) {
-        const value = rect[key]
-        if (value !== undefined && (typeof value !== 'number' || value < RECT_MIN || value > RECT_MAX)) {
-          throw new RangeError(`layout.modules.${id}.${key} 必须在 ${RECT_MIN}–${RECT_MAX}`)
-        }
-      }
-      if (rect.visible !== undefined && typeof rect.visible !== 'boolean') {
-        throw new RangeError(`layout.modules.${id}.visible 必须是布尔`)
-      }
-    }
+    for (const [id, rect] of Object.entries(patch)) assertRect(id, rect)
+    const baseModules = this.layout?.modules ?? this.hubPhone?.layout?.modules ?? {}
     const modules: PhoneLayout['modules'] = {}
-    for (const [id, rect] of Object.entries(this.layout?.modules ?? {})) {
+    for (const [id, rect] of Object.entries(baseModules)) {
       modules[id] = { ...rect }
     }
     for (const [id, rect] of Object.entries(patch)) {
@@ -254,8 +452,32 @@ export class K20Gateway {
           : {}),
       }
     }
-    this.layout = { rev: (this.layout?.rev ?? 0) + 1, modules }
+    const floor = Math.max(this.layout?.rev ?? 0, this.hubPhone?.layout?.rev ?? 0)
+    this.layout = { rev: floor + 1, modules }
     this.bump()
+    this.layoutListener?.(this.layout)
+    return this.layout
+  }
+
+  /** 面板保存：整包替换要存的槽位（跟默认一样的槽位不在里面）。rev 只增。 */
+  replaceLayout(modules: Record<string, PhoneModulePatch>): PhoneLayout {
+    const cleaned: Record<string, PhoneModulePatch> = {}
+    for (const [id, rect] of Object.entries(modules)) cleaned[id] = normalizeRect(id, rect)
+    const stored: PhoneLayout['modules'] = {}
+    for (const [id, rect] of Object.entries(cleaned)) {
+      stored[id] = {
+        x: rect.x ?? 0,
+        y: rect.y ?? 0,
+        w: rect.w ?? 0,
+        h: rect.h ?? 0,
+        visible: rect.visible ?? true,
+        ...(rect.chrome !== undefined ? { chrome: rect.chrome } : {}),
+      }
+    }
+    const floor = Math.max(this.layout?.rev ?? 0, this.hubPhone?.layout?.rev ?? 0)
+    this.layout = { rev: floor + 1, modules: stored }
+    this.bump()
+    this.layoutListener?.(this.layout)
     return this.layout
   }
 
@@ -290,12 +512,55 @@ export class K20Gateway {
     this.companion = state
   }
 
-  /** 喂 pc（来自真 hub 的 snapshot 订阅，index.ts 接线）。内容变了才 bump，
-   *  免得每个轮询周期都惊动一遍长轮询等待者。 */
+  /**
+   * Windows 还醒着的心跳。空对象或没给 online 当成在线。
+   * cpu / memory / gpu 可选，带上就写进快照给手机的 PC 模块。
+   * at 是本进程收到的时刻；请求体里的时间不用。测试可以传入过去的 at。
+   * 在线位没变、整数百分比也没变，不 bump。没带上的指标沿用上一拍。
+   */
+  noteDesk(input: DeskBeat, at = Date.now()): void {
+    const reported = input.online !== false
+    const beforeBit = this.deskBit(Date.now())
+    const beforeKey = this.desk === null ? '' : deskMetricKey(this.desk)
+    const next: DeskBeat & { at: number } = { online: reported, at }
+    const cpu = mergeCpu(this.desk?.cpu, input.cpu)
+    const memory = mergeMemory(this.desk?.memory, input.memory)
+    const gpu = mergeGpu(this.desk?.gpu, input.gpu)
+    if (cpu !== undefined) next.cpu = cpu
+    if (memory !== undefined) next.memory = memory
+    if (gpu !== undefined) next.gpu = gpu
+    this.desk = next
+    const afterBit = this.deskBit(Date.now())
+    const afterKey = deskMetricKey(this.desk)
+    if (beforeBit !== afterBit) {
+      this.deskChangeIso = new Date(at).toISOString()
+      this.bump()
+    } else if (beforeKey !== afterKey) {
+      this.bump()
+    } else if (this.deskChangeIso === '') {
+      this.deskChangeIso = new Date(at).toISOString()
+    }
+  }
+
+  /** 键鼠空闲。null = 这一拍不知道，不当成在休息。不 bump。 */
+  noteIdle(idle: number | null, at = Date.now()): void {
+    this.idleSec = idle
+    this.idleAt = at
+  }
+
+  /** 喂 pc 指标样本。心跳没来过时，online 也用这份样本。内容变了才 bump。 */
   setPc(state: PcState | null): void {
     this.pcAt = state === null ? 0 : Date.now()
     const prev = this.pc
     this.pc = state
+    if (JSON.stringify(prev) !== JSON.stringify(state)) this.bump()
+  }
+
+  /** 喂 phone（来自真 hub 的 snapshot）。控制台主屏布局写在 hub，手机只连本模拟面，
+   *  不转发这段的话保存布局到不了屏上。内容变了才 bump。 */
+  setPhone(state: PhoneState | null): void {
+    const prev = this.hubPhone
+    this.hubPhone = state
     if (JSON.stringify(prev) !== JSON.stringify(state)) this.bump()
   }
 
@@ -312,16 +577,71 @@ export class K20Gateway {
     return this.photos?.ids ?? []
   }
 
-  /** pc 对 app 的语义必须完整：缺 pc = 「还没数据 = 保持醒着」（DockViewModel
-   *  noteDeskPc 的分支），熄屏链路会断——所以这里永远给出 pc。
-   *  真样本过期（PC_STALE_MS）或从未有过 → online:false，对齐真 hub 的
-   *  「探针过期即离线」语义（hub 侧 stale_ms 12s）。 */
-  private pcState(): PcState {
-    if (this.pc !== null && Date.now() - this.pcAt <= PC_STALE_MS) return this.pc
-    return { online: false, updated_at: this.pc?.updated_at ?? '' }
+  /** 心跳接管后的在线位。null = 还没有心跳。 */
+  private deskBit(now: number): boolean | null {
+    if (this.desk === null) return null
+    return now - this.desk.at <= DESK_STALE_MS && this.desk.online === true
   }
 
-  /** 组 snapshot：协议最小集（未接的面整个省略；phone 只在写过布局后带）。
+  /** pc 对 app 的语义必须完整：缺 pc = 「还没数据 = 保持醒着」（DockViewModel
+   *  noteDeskPc 的分支），熄屏链路会断——所以这里永远给出 pc。
+   *  有心跳时 online 只看心跳（20 秒）。样本只贡献 cpu/memory/gpu/fps。
+   *  从未心跳：60 秒内的样本原样透传，否则 online:false。 */
+  private pcState(): PcState {
+    const now = Date.now()
+    if (this.desk === null) {
+      if (this.pc !== null && now - this.pcAt <= PC_STALE_MS) return this.pc
+      return { online: false, updated_at: this.pc?.updated_at ?? '' }
+    }
+    const online = this.deskBit(now) === true
+    let updatedAt = this.deskChangeIso
+    if (now - this.desk.at > DESK_STALE_MS && this.desk.online) {
+      updatedAt = new Date(this.desk.at + DESK_STALE_MS).toISOString()
+    }
+    const result: PcState = { online, updated_at: updatedAt }
+    if (online && this.desk !== null) {
+      if (this.desk.cpu !== undefined) result.cpu = this.desk.cpu
+      if (this.desk.memory !== undefined) result.memory = this.desk.memory
+      if (this.desk.gpu !== undefined) result.gpu = this.desk.gpu
+    }
+    if (this.pc !== null && now - this.pcAt <= PC_STALE_MS) {
+      if (result.cpu === undefined && this.pc.cpu !== undefined) result.cpu = this.pc.cpu
+      if (result.memory === undefined && this.pc.memory !== undefined) result.memory = this.pc.memory
+      if (result.gpu === undefined && this.pc.gpu !== undefined) result.gpu = this.pc.gpu
+      if (this.pc.fps !== undefined) result.fps = this.pc.fps
+    }
+    return result
+  }
+
+  /** 只在 Windows 仍被判定为在线、且这一拍还新鲜时交出空闲秒数。 */
+  private idleState(): number | null {
+    if (this.idleSec === null) return null
+    if (Date.now() - this.idleAt > DESK_STALE_MS) return null
+    if (this.deskBit(Date.now()) !== true) return null
+    return this.idleSec
+  }
+
+  /** phone 下发：本地布局（dsh 落盘）在就不让 hub 的 layout 盖过来。
+   *  没有本地布局时才原样转发 hub 的 phone。两边都没有则省略
+   *  ——带一份 rev=0 的默认外观会把手机手改打回出厂。 */
+  private phoneState(): PhoneState | null {
+    const hub = this.hubPhone
+    const local = this.layout
+    if (hub === null && local === null) return null
+    if (local !== null && hub !== null) return { ...hub, layout: local }
+    if (local === null) return hub
+    const layout = local
+    return {
+      rev: 0,
+      tile: { style: 'ink', opacity: 42, corner: 20 },
+      type: { font: 'system', clock: 88, stats: 20, tile: 15, chip: 15 },
+      screen: { keep_on: true, sleep_sec: 60 },
+      weather: { enabled: true, city: '上海' },
+      layout,
+    }
+  }
+
+  /** 组 snapshot：协议最小集（未接的面整个省略）。
    *  pc 是例外：永远给出（缺了 app 读成醒着，见 pcState 注释）。 */
   snapshot(): Snapshot {
     const snap: Snapshot = {
@@ -333,16 +653,10 @@ export class K20Gateway {
       devices: [],
       media: this.media,
     }
-    if (this.layout !== null) {
-      snap.phone = {
-        rev: 0,
-        tile: { style: 'ink', opacity: 42, corner: 20 },
-        type: { font: 'system', clock: 88, stats: 20, tile: 15, chip: 15 },
-        screen: { keep_on: true, sleep_sec: 60 },
-        weather: { enabled: true, city: '上海' },
-        layout: { rev: this.layout.rev, modules: this.layout.modules },
-      }
-    }
+    const idle = this.idleState()
+    if (idle !== null) snap.idle_sec = idle
+    const phone = this.phoneState()
+    if (phone !== null) snap.phone = phone
     if (this.caption !== null) snap.caption = this.caption
     if (this.lock !== null) snap.lock = this.lock
     if (this.companion !== null) snap.companion = this.companion
@@ -359,16 +673,17 @@ export interface K20ServerDeps {
   }
   config: { token: string; serverName: string; companionUpstream: string; hubUpstream: string; ttsBaseUrl: string; ttsToken: string }
   gateway: K20Gateway
+  /** 书桌手机对话。在则 chat 走本机会话，快照带 companion.ready。 */
+  voice?: DeskVoice
 }
 
 /** 把全部路由挂上宿主 webServer。handler 全部自带错误兜底（异常转 500 JSON） */
 export function registerK20Server(deps: K20ServerDeps): void {
-  const { ctx, webServer, config, gateway } = deps
+  const { ctx, webServer, config, gateway, voice } = deps
   const token = config.token
 
-  // companion 面可用（代理在位）→ 快照带 ready=true，app 的语音门才开；
-  // 置空 upstream 时保持 404 语义，快照不带 companion，语音照旧被 app 拦下。
-  if (config.companionUpstream.trim() !== '') {
+  // app 的语音门看 snapshot.companion.ready。会话接上了，或还留着上游，才开门。
+  if (voice !== undefined || config.companionUpstream.trim() !== '') {
     gateway.setCompanion({ ready: true, voice: true, speaking: false, timer: null })
   }
 
@@ -553,7 +868,97 @@ export function registerK20Server(deps: K20ServerDeps): void {
     'k20 网关 /v1/devices/*',
   )
 
-  // —— /v1/companion/announce|stop：语音直连 keeper-tts（hub 退役第一步）——
+  // —— POST /v1/desk：Windows 还醒着，顺便带 CPU / 内存 / GPU。没装上之前，pc 仍走 setPc 样本。——
+  register(
+    {
+      kind: 'exact',
+      path: '/v1/desk',
+      handler: guarded(async (req, res) => {
+        if (req.method !== 'POST') {
+          sendError(res, 404, 'not_found', '未知接口')
+          return
+        }
+        const body = await readJsonBody(req)
+        if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+          sendError(res, 400, 'bad_request', 'online 必须是布尔')
+          return
+        }
+        const raw = body as { online?: unknown; cpu?: unknown; memory?: unknown; gpu?: unknown }
+        if (raw.online !== undefined && typeof raw.online !== 'boolean') {
+          sendError(res, 400, 'bad_request', 'online 必须是布尔')
+          return
+        }
+        const cpu = readCpu(raw.cpu)
+        const memory = readMemory(raw.memory)
+        const gpu = readGpu(raw.gpu)
+        if (cpu === 'bad' || memory === 'bad' || gpu === 'bad') {
+          sendError(res, 400, 'bad_request', 'cpu / memory / gpu 字段不合法')
+          return
+        }
+        const beat: DeskBeat = {}
+        if (typeof raw.online === 'boolean') beat.online = raw.online
+        if (cpu !== undefined) beat.cpu = cpu
+        if (memory !== undefined) beat.memory = memory
+        if (gpu !== undefined) beat.gpu = gpu
+        gateway.noteDesk(beat)
+        sendJson(res, 200, { ok: true })
+      }),
+    },
+    'k20 网关 /v1/desk（Windows 在线心跳，带 CPU / 内存 / GPU）',
+  )
+
+  // 旧探针仍 POST {pc, running, idle_sec} 到 /v1/telemetry。只取 pc，其余丢掉。
+  register(
+    {
+      kind: 'exact',
+      path: '/v1/telemetry',
+      handler: guarded(async (req, res) => {
+        if (req.method !== 'POST') {
+          sendError(res, 404, 'not_found', '未知接口')
+          return
+        }
+        const body = await readJsonBody(req)
+        if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+          sendError(res, 400, 'bad_request', 'pc 字段不合法')
+          return
+        }
+        const pc = (body as { pc?: unknown }).pc
+        if (pc !== undefined && (typeof pc !== 'object' || pc === null || Array.isArray(pc))) {
+          sendError(res, 400, 'bad_request', 'pc 字段不合法')
+          return
+        }
+        const raw = (pc ?? {}) as { online?: unknown; cpu?: unknown; memory?: unknown; gpu?: unknown }
+        if (raw.online !== undefined && typeof raw.online !== 'boolean') {
+          sendError(res, 400, 'bad_request', 'online 必须是布尔')
+          return
+        }
+        const cpu = readCpu(raw.cpu)
+        const memory = readMemory(raw.memory)
+        const gpu = readGpu(raw.gpu)
+        if (cpu === 'bad' || memory === 'bad' || gpu === 'bad') {
+          sendError(res, 400, 'bad_request', 'cpu / memory / gpu 字段不合法')
+          return
+        }
+        const beat: DeskBeat = {}
+        if (typeof raw.online === 'boolean') beat.online = raw.online
+        else beat.online = true
+        if (cpu !== undefined) beat.cpu = cpu
+        if (memory !== undefined) beat.memory = memory
+        if (gpu !== undefined) beat.gpu = gpu
+        const idleRaw = (body as { idle_sec?: unknown }).idle_sec
+        if (idleRaw !== undefined && (typeof idleRaw !== 'number' || !Number.isFinite(idleRaw) || idleRaw < 0)) {
+          sendError(res, 400, 'bad_request', 'idle_sec 必须是非负数字')
+          return
+        }
+        gateway.noteDesk(beat)
+        gateway.noteIdle(typeof idleRaw === 'number' ? idleRaw : null)
+        sendJson(res, 200, { ok: true })
+      }),
+    },
+    'k20 网关 /v1/telemetry（旧 Windows 探针的 pc 样本）',
+  )
+
+  // —— /v1/companion/announce|stop：语音直连 keeper-tts ——
   // 出声 = POST :18100/v1/speak（play_only=true，TTS 自己占本机喇叭，3s 超时只等收执）；
   // 闭嘴 = POST /v1/stop（0.8s）。与 hub tts.py 的合同逐字段对齐（voice/language/turn_id/speed）。
   // 大脑（chat/memory/audio）还在旧 hub，继续走下方 prefix 代理；TTS 没应答也照常 200
@@ -597,6 +1002,7 @@ export function registerK20Server(deps: K20ServerDeps): void {
       path: '/v1/companion/stop',
       handler: guarded(async (req, res) => {
         await readJsonBody(req)
+        voice?.cancel()
         if (ttsBase !== '') {
           await postJsonToTts(ttsBase, '/v1/stop', {}, ttsToken, 800)
         }
@@ -606,7 +1012,61 @@ export function registerK20Server(deps: K20ServerDeps): void {
     'k20 网关 /v1/companion/stop（直连 keeper-tts /v1/stop）',
   )
 
-  // —— /v1/companion/*：代理到伴侣大脑（默认旧 hub）——
+  if (voice !== undefined) {
+    register(
+      {
+        kind: 'exact',
+        path: '/v1/companion/chat',
+        handler: guarded(async (req, res) => {
+          if (req.method !== 'POST') {
+            sendError(res, 404, 'not_found', '未知接口')
+            return
+          }
+          const body = (await readJsonBody(req)) as { text?: unknown; turn_id?: unknown }
+          const heard = typeof body.text === 'string' ? body.text.trim() : ''
+          if (heard === '') {
+            sendError(res, 400, 'bad_request', 'text 不能为空')
+            return
+          }
+          const turn = typeof body.turn_id === 'string' && body.turn_id !== '' ? body.turn_id : `k20-${Date.now()}`
+          const ac = new AbortController()
+          const onClose = (): void => {
+            if (!res.writableEnded) ac.abort()
+          }
+          req.on('aborted', onClose)
+          let spoken = ''
+          try {
+            spoken = clipAnnounce(await voice.reply(heard, ac.signal))
+            if (spoken === '') spoken = '我在。'
+          } catch (error) {
+            if (ac.signal.aborted || res.writableEnded) return
+            ctx.logger?.('k20')?.warn?.('书桌对话失败：%s', error instanceof Error ? error.message : String(error))
+            sendError(res, 502, 'companion_failed', '这一句没接住')
+            return
+          } finally {
+            req.off('aborted', onClose)
+          }
+          if (res.writableEnded) return
+          if (ttsBase !== '') {
+            const said = await postJsonToTts(
+              ttsBase,
+              '/v1/speak',
+              { text: spoken, voice: 'shorekeeper', language: 'chinese', turn_id: turn, speed: 1.0, play_only: true },
+              ttsToken,
+              3000,
+            )
+            if (said === null || said.status < 200 || said.status >= 300) {
+              ctx.logger?.('k20')?.warn?.('对话直连 TTS 未应答（status=%s），本轮只出字幕', said?.status ?? 'n/a')
+            }
+          }
+          sendJson(res, 200, { text: spoken, audio_id: null, listen: listenPolicy(spoken) })
+        }),
+      },
+      'k20 网关 /v1/companion/chat（书桌会话）',
+    )
+  }
+
+  // —— /v1/companion/*：memory/audio 仍可转发；chat 在接上会话时由上面的 exact 接走 ——
   // 她的语音链（chat/stop/announce/memory/audio）T3/T4 之前还长在 hub 上：
   // 网关把整个 companion 面原样转发（Authorization 同一枚 token），流式回传
   // （audio 是 wav 字节流）。companionUpstream 置空则回到「可关」404 语义。

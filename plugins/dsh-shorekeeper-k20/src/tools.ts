@@ -8,6 +8,7 @@ import { HubRequestError, type HubClient } from './hub-client.ts'
 import { BackgroundClient, BackgroundRequestError, LayoutNotReadyError } from './background-client.ts'
 import { GatewayClient } from './gateway.ts'
 import type { K20Config } from './config.ts'
+import type { PhoneLayout, PhoneModulePatch, Snapshot } from './types.ts'
 
 type Json = string | number | boolean | null | Json[] | { [key: string]: Json }
 
@@ -16,6 +17,18 @@ export interface K20ToolDeps {
   background: BackgroundClient
   gateway: GatewayClient
   config: K20Config
+  /** 在的话，apply 写本进程的屏网关（dsh 自己的布局），不再打 hub。启动完成前 apply 为 null。 */
+  localLayout?: { apply: ((modules: Record<string, PhoneModulePatch>) => PhoneLayout) | null }
+  /** 本进程网关。在的话字幕/熄屏/媒体/快照不再打旧 hub。启动完成前各方法为 null。 */
+  screen?: LocalScreen
+}
+
+export interface LocalScreen {
+  snapshot: (() => Snapshot) | null
+  pushCaption: ((text: string, scale: number) => void) | null
+  clearCaption: (() => void) | null
+  lock: (() => { requested_at: string }) | null
+  media: ((action: 'toggle' | 'next' | 'previous') => { playing: boolean; title?: string }) | null
 }
 
 /** 把底层错误翻译成优雅降级结果（不刷屏报错） */
@@ -53,7 +66,7 @@ export function createK20Tools(deps: K20ToolDeps): ToolDefinition[] {
   const snapshot = defineTool({
     name: 'k20_snapshot',
     description:
-      '读取 k20 屏的当前状态：在线态、室内温湿度（米家温度源）、正在播放、伴侣就绪度、设备列表。查「现在屋里多少度」走这里。',
+      '读取 k20 屏网关的当前状态：电脑在线位、字幕、播放标记。室内温度不在这里，问室温用 desk_mi_sensor。',
     parameters: {},
     output: {
       schema: { type: 'json' },
@@ -61,6 +74,18 @@ export function createK20Tools(deps: K20ToolDeps): ToolDefinition[] {
     },
     async execute() {
       try {
+        if (deps.screen?.snapshot) {
+          const snap = deps.screen.snapshot()
+          const online = snap.pc?.online === true
+          return {
+            k20_online: true,
+            seq: snap.seq ?? null,
+            summary: `屏网关在（${snap.hub.name}，seq ${snap.seq ?? '?'}）；电脑 ${online ? '在线' : '离线'}`,
+            temperature: null,
+            media: snap.media ? { playing: snap.media.playing, title: snap.media.title ?? null } : null,
+            devices: [],
+          } satisfies Json
+        }
         const snap = await hub.snapshot()
         const lines = [
           `k20 在线（${snap.hub.name}，seq ${snap.seq ?? '?'}）`,
@@ -109,10 +134,18 @@ export function createK20Tools(deps: K20ToolDeps): ToolDefinition[] {
     async execute(args) {
       try {
         if (args.clear === true) {
+          if (deps.screen?.clearCaption) {
+            deps.screen.clearCaption()
+            return { ok: true, summary: '字幕已清除' } satisfies Json
+          }
           await gateway.clearCaption()
           return { ok: true, summary: '字幕已清除' } satisfies Json
         }
         if (typeof args.text === 'string' && args.text.trim()) {
+          if (deps.screen?.pushCaption) {
+            deps.screen.pushCaption(args.text.trim(), config.captionScale)
+            return { ok: true, summary: '字幕已推送到 k20' } satisfies Json
+          }
           await gateway.caption(args.text.trim(), { scale: config.captionScale })
           return { ok: true, summary: '字幕已推送到 k20' } satisfies Json
         }
@@ -209,7 +242,13 @@ export function createK20Tools(deps: K20ToolDeps): ToolDefinition[] {
         if (args.layout === undefined || args.layout === null || typeof args.layout !== 'object') {
           return { ok: false, degraded: 'apply 需要 layout 对象' } satisfies Json
         }
-        await gateway.setPhoneLayout(JSON.parse(JSON.stringify(args.layout)))
+        const body = JSON.parse(JSON.stringify(args.layout)) as { modules?: Record<string, PhoneModulePatch> }
+        const modules = body.modules
+        if (deps.localLayout?.apply && modules && typeof modules === 'object') {
+          const next = deps.localLayout.apply(modules)
+          return { ok: true, rev: next.rev, summary: `布局已提交（第 ${next.rev} 版，安卓下一轮轮询套用）` } satisfies Json
+        }
+        await gateway.setPhoneLayout({ modules: modules ?? {} })
         return { ok: true, summary: '布局已提交（安卓会在下一轮轮询按 rev 套用）' } satisfies Json
       } catch (error) {
         return degrade(error) satisfies Json
@@ -219,7 +258,7 @@ export function createK20Tools(deps: K20ToolDeps): ToolDefinition[] {
 
   const media = defineTool({
     name: 'k20_media',
-    description: '控制电脑正在播放的媒体会话：toggle 播放/暂停、next 下一首、previous 上一首。',
+    description: '更新 k20 屏上的播放标记：toggle 播放/暂停、next 下一首、previous 上一首。不控制电脑上的播放器。',
     parameters: {
       action: { type: 'string', enum: ['toggle', 'next', 'previous'], description: '媒体键', required: true },
     },
@@ -229,6 +268,15 @@ export function createK20Tools(deps: K20ToolDeps): ToolDefinition[] {
     },
     async execute(args) {
       try {
+        if (deps.screen?.media) {
+          const result = deps.screen.media(args.action)
+          return {
+            ok: true,
+            playing: result.playing,
+            title: result.title ?? null,
+            summary: `屏上的播放标记已更新（${args.action}${result.playing ? '，显示为播放' : '，显示为暂停'}）`,
+          } satisfies Json
+        }
         const result = await hub.media(args.action)
         return {
           ok: true,
@@ -255,6 +303,10 @@ export function createK20Tools(deps: K20ToolDeps): ToolDefinition[] {
         return { ok: false, degraded: '熄屏未启用：这是高危操作，需在插件设置里明确开启 lockEnabled' } satisfies Json
       }
       try {
+        if (deps.screen?.lock) {
+          deps.screen.lock()
+          return { ok: true, summary: 'k20 已熄屏' } satisfies Json
+        }
         await gateway.lock()
         return { ok: true, summary: 'k20 已熄屏' } satisfies Json
       } catch (error) {

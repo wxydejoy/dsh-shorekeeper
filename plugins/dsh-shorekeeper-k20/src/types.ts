@@ -90,6 +90,8 @@ export interface Snapshot {
   lock?: LockState | null
   /** 回忆相框（F37）：真 hub photos/ 目录的照片名单；相册没开/没图不带（同 hub） */
   photos?: PhotoIds | null
+  /** 键鼠空闲秒数。探针没报、或 Windows 已离线时不带。手机不读这个字段。 */
+  idle_sec?: number
   [key: string]: unknown
 }
 

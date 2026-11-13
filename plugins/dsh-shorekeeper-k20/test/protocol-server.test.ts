@@ -202,6 +202,53 @@ describe('k20 网关服务端', () => {
     expect(bad.status).toBe(400)
   })
 
+  it('phone：真 hub 的主屏布局原样进 snapshot；本面写入只盖更高 rev 的 layout', async () => {
+    const hubPhone = {
+      rev: 0,
+      tile: { style: 'ink', opacity: 42, corner: 20 },
+      type: { font: 'system', clock: 88, stats: 20, tile: 15, chip: 15 },
+      screen: { keep_on: true, sleep_sec: 60 },
+      weather: { enabled: true, city: '上海' },
+      layout: {
+        rev: 20,
+        modules: {
+          Clock: { x: 0.1, y: 0.3, w: 0.4, h: 0.38, visible: true, chrome: false },
+          Weather: { x: 0.6, y: 0.1, w: 0.3, h: 0.2, visible: true, chrome: true },
+        },
+      },
+    }
+    gateway.setPhone(hubPhone)
+    const seqAfter = ((await web.dispatch('GET', '/v1/snapshot', undefined, authHeaders())).body as { seq: number }).seq
+    gateway.setPhone({ ...hubPhone, layout: { ...hubPhone.layout, modules: { ...hubPhone.layout.modules } } })
+    const same = (await web.dispatch('GET', '/v1/snapshot', undefined, authHeaders())).body as {
+      seq: number
+      phone?: { rev: number; weather?: { city: string }; layout?: { rev: number; modules: Record<string, { x: number }> } }
+    }
+    expect(same.seq).toBe(seqAfter)
+    expect(same.phone?.layout?.rev).toBe(20)
+    expect(same.phone?.layout?.modules.Clock?.x).toBe(0.1)
+    expect(same.phone?.weather?.city).toBe('上海')
+    expect(same.phone?.rev).toBe(0)
+
+    await web.dispatch('POST', '/v1/phone/layout', { layout: { modules: { Weather: { visible: false } } } }, authHeaders())
+    const patched = (await web.dispatch('GET', '/v1/snapshot', undefined, authHeaders())).body as {
+      phone?: { rev: number; weather?: { city: string }; layout?: { rev: number; modules: Record<string, { visible?: boolean; x?: number }> } }
+    }
+    expect(patched.phone?.layout?.rev).toBe(21)
+    expect(patched.phone?.layout?.modules.Weather?.visible).toBe(false)
+    expect(patched.phone?.layout?.modules.Clock?.x).toBe(0.1)
+    expect(patched.phone?.weather?.city).toBe('上海')
+    expect(patched.phone?.rev).toBe(0)
+
+    const newer = { ...hubPhone, layout: { ...hubPhone.layout, rev: 22 } }
+    gateway.setPhone(newer)
+    const kept = (await web.dispatch('GET', '/v1/snapshot', undefined, authHeaders())).body as {
+      phone?: { layout?: { rev: number; modules: Record<string, { visible?: boolean }> } }
+    }
+    expect(kept.phone?.layout?.rev).toBe(21)
+    expect(kept.phone?.layout?.modules.Weather?.visible).toBe(false)
+  })
+
   it('lock：请求 → snapshot.lock.requested_at', async () => {
     const res = await web.dispatch('POST', '/v1/lock', {}, authHeaders())
     expect(res.status).toBe(200)
@@ -366,6 +413,39 @@ describe('k20 网关服务端', () => {
     expect(snap.companion).toMatchObject({ ready: true, voice: true })
   })
 
+  it('书桌对话：回答回到字幕，并打开语音门；空话 400，打断会取消', async () => {
+    const web2 = createMockWebServer()
+    const gateway2 = new K20Gateway('study')
+    let heard = ''
+    let cancelled = false
+    registerK20Server({
+      ctx: { effect: (fn: () => void) => fn() } as never,
+      webServer: web2,
+      config: { token: TOKEN, serverName: 'study', companionUpstream: '', hubUpstream: '', ttsBaseUrl: '', ttsToken: '' },
+      gateway: gateway2,
+      voice: {
+        reply: async (text) => {
+          heard = text
+          return '晚上好。'
+        },
+        cancel: () => {
+          cancelled = true
+        },
+      },
+    })
+    const snap = (await web2.dispatch('GET', '/v1/snapshot', undefined, authHeaders())).body as { companion?: { ready?: boolean } }
+    expect(snap.companion?.ready).toBe(true)
+    const res = await web2.dispatch('POST', '/v1/companion/chat', { text: '在吗' }, authHeaders())
+    expect(res.status).toBe(200)
+    expect(heard).toBe('在吗')
+    expect(res.body).toMatchObject({ text: '晚上好。', audio_id: null })
+    const empty = await web2.dispatch('POST', '/v1/companion/chat', { text: '  ' }, authHeaders())
+    expect(empty.status).toBe(400)
+    const stop = await web2.dispatch('POST', '/v1/companion/stop', {}, authHeaders())
+    expect(stop.status).toBe(200)
+    expect(cancelled).toBe(true)
+  })
+
   it('长轮询：since=当前 seq 时挂住，bump 后立刻醒；不带 since 立即返回', async () => {
     const pending = web.dispatch('GET', '/v1/snapshot?since=0&wait=5', undefined, authHeaders())
     let settled = false
@@ -387,5 +467,145 @@ describe('k20 网关服务端', () => {
     const res = await web.dispatch('GET', '/v1/snapshot?since=999&wait=0', undefined, authHeaders())
     expect(res.status).toBe(200)
     expect((res.body as { seq: number }).seq).toBe(0)
+  })
+
+  it('desk：无鉴权或错 token → 401；online 非布尔 → 400', async () => {
+    const noAuth = await web.dispatch('POST', '/v1/desk', {})
+    expect(noAuth.status).toBe(401)
+    const badAuth = await web.dispatch('POST', '/v1/desk', {}, { authorization: 'Bearer wrong' })
+    expect(badAuth.status).toBe(401)
+    const bad = await web.dispatch('POST', '/v1/desk', { online: 'yes' }, authHeaders())
+    expect(bad.status).toBe(400)
+    expect((bad.body as { error?: { code?: string } }).error?.code).toBe('bad_request')
+  })
+
+  it('desk：空体视为在线；显式 false 立刻离线；过期的接收时间盖不住', async () => {
+    const empty = await web.dispatch('POST', '/v1/desk', {}, authHeaders())
+    expect(empty.status).toBe(200)
+    expect(empty.body).toEqual({ ok: true })
+    let snap = (await web.dispatch('GET', '/v1/snapshot', undefined, authHeaders())).body as {
+      pc?: { online: boolean }
+    }
+    expect(snap.pc?.online).toBe(true)
+
+    const off = await web.dispatch('POST', '/v1/desk', { online: false }, authHeaders())
+    expect(off.status).toBe(200)
+    snap = (await web.dispatch('GET', '/v1/snapshot', undefined, authHeaders())).body as { pc?: { online: boolean } }
+    expect(snap.pc?.online).toBe(false)
+
+    gateway.noteDesk({ online: true }, Date.now() - 21_000)
+    snap = (await web.dispatch('GET', '/v1/snapshot', undefined, authHeaders())).body as { pc?: { online: boolean } }
+    expect(snap.pc?.online).toBe(false)
+  })
+
+  it('desk：心跳盖过 hub 样本的 online，cpu 仍留下；样本不能把 false 改回 true', async () => {
+    gateway.setPc({ online: false, updated_at: '2026-11-05T00:00:00Z', cpu: { percent: 12, temp_celsius: 40 } })
+    gateway.noteDesk({ online: true })
+    let snap = (await web.dispatch('GET', '/v1/snapshot', undefined, authHeaders())).body as {
+      pc?: { online: boolean; cpu?: { percent: number } }
+    }
+    expect(snap.pc?.online).toBe(true)
+    expect(snap.pc?.cpu?.percent).toBe(12)
+
+    gateway.noteDesk({ online: false })
+    gateway.setPc({ online: true, updated_at: '2026-11-05T00:00:01Z', cpu: { percent: 12, temp_celsius: 40 } })
+    snap = (await web.dispatch('GET', '/v1/snapshot', undefined, authHeaders())).body as {
+      pc?: { online: boolean; cpu?: { percent: number } }
+    }
+    expect(snap.pc?.online).toBe(false)
+    expect(snap.pc?.cpu?.percent).toBe(12)
+
+    gateway.noteDesk({ online: true }, Date.now() - 21_000)
+    gateway.setPc({ online: true, updated_at: new Date().toISOString(), cpu: { percent: 3 } })
+    snap = (await web.dispatch('GET', '/v1/snapshot', undefined, authHeaders())).body as { pc?: { online: boolean } }
+    expect(snap.pc?.online).toBe(false)
+  })
+
+  it('desk：带上 CPU / 内存 / GPU 进快照；整数没变不 bump，变了才 bump', async () => {
+    const first = await web.dispatch('POST', '/v1/desk', {
+      cpu: { percent: 12.2, temp_celsius: 48 },
+      memory: { percent: 61.4, used_gb: 19.2, total_gb: 32 },
+      gpu: { name: 'RTX 4070', percent: 8.4, temp_celsius: 46 },
+    }, authHeaders())
+    expect(first.status).toBe(200)
+    const snap = (await web.dispatch('GET', '/v1/snapshot', undefined, authHeaders())).body as {
+      seq: number
+      pc?: { online: boolean; cpu?: { percent: number; temp_celsius?: number }; memory?: { percent: number }; gpu?: { name?: string; percent?: number } }
+    }
+    expect(snap.pc?.online).toBe(true)
+    expect(snap.pc?.cpu).toEqual({ percent: 12.2, temp_celsius: 48 })
+    expect(snap.pc?.memory?.percent).toBe(61.4)
+    expect(snap.pc?.gpu).toMatchObject({ name: 'RTX 4070', percent: 8.4 })
+
+    const seqAfter = snap.seq
+    await web.dispatch('POST', '/v1/desk', { cpu: { percent: 12.4 } }, authHeaders())
+    const same = (await web.dispatch('GET', '/v1/snapshot', undefined, authHeaders())).body as { seq: number }
+    expect(same.seq).toBe(seqAfter)
+
+    await web.dispatch('POST', '/v1/desk', { cpu: { percent: 40 } }, authHeaders())
+    const changed = (await web.dispatch('GET', '/v1/snapshot', undefined, authHeaders())).body as {
+      seq: number
+      pc?: { cpu?: { percent: number; temp_celsius?: number }; memory?: { percent: number } }
+    }
+    expect(changed.seq).toBeGreaterThan(seqAfter)
+    expect(changed.pc?.cpu?.percent).toBe(40)
+    expect(changed.pc?.cpu?.temp_celsius).toBe(48)
+    expect(changed.pc?.memory?.percent).toBe(61.4)
+
+    const bad = await web.dispatch('POST', '/v1/desk', { cpu: { percent: 'high' } }, authHeaders())
+    expect(bad.status).toBe(400)
+  })
+
+  it('telemetry：旧探针的 pc 样本进快照，running 被丢掉', async () => {
+    const res = await web.dispatch('POST', '/v1/telemetry', {
+      pc: {
+        online: true,
+        cpu: { percent: 22, temp_celsius: 61 },
+        memory: { percent: 48 },
+        gpu: { name: 'RTX 4070', percent: 4, temp_celsius: 41 },
+      },
+      running: ['code.exe'],
+      idle_sec: 3,
+    }, authHeaders())
+    expect(res.status).toBe(200)
+    const snap = (await web.dispatch('GET', '/v1/snapshot', undefined, authHeaders())).body as {
+      idle_sec?: number
+      pc?: { online: boolean; cpu?: { percent: number; temp_celsius?: number }; memory?: { percent: number }; gpu?: { percent?: number } }
+    }
+    expect(snap.pc?.online).toBe(true)
+    expect(snap.pc?.cpu).toEqual({ percent: 22, temp_celsius: 61 })
+    expect(snap.pc?.memory?.percent).toBe(48)
+    expect(snap.pc?.gpu?.percent).toBe(4)
+    expect(snap.idle_sec).toBe(3)
+  })
+
+  it('desk：连续两拍在线不增加 seq；变成离线才增加', async () => {
+    await web.dispatch('POST', '/v1/desk', {}, authHeaders())
+    const seqAfter = ((await web.dispatch('GET', '/v1/snapshot', undefined, authHeaders())).body as { seq: number }).seq
+    await web.dispatch('POST', '/v1/desk', { online: true }, authHeaders())
+    const same = (await web.dispatch('GET', '/v1/snapshot', undefined, authHeaders())).body as { seq: number }
+    expect(same.seq).toBe(seqAfter)
+    await web.dispatch('POST', '/v1/desk', { online: false }, authHeaders())
+    const changed = (await web.dispatch('GET', '/v1/snapshot', undefined, authHeaders())).body as { seq: number; pc?: { online: boolean } }
+    expect(changed.seq).toBeGreaterThan(seqAfter)
+    expect(changed.pc?.online).toBe(false)
+  })
+})
+
+describe('主屏布局写入', () => {
+  it('越界或非法坐标收进画布，版本号照样加一', () => {
+    const gateway = new K20Gateway('study')
+    gateway.adoptLayout({
+      rev: 22,
+      modules: { Clock: { x: 0, y: 0, w: 0.2, h: 0.2, visible: true } },
+    })
+    const next = gateway.replaceLayout({
+      Pc: { x: -0.2, y: 1.4, w: Number.NaN, h: null as unknown as number, visible: true, chrome: false },
+    })
+    expect(next.rev).toBe(23)
+    expect(next.modules.Pc).toEqual({ x: 0, y: 1, w: 0, h: 0, visible: true, chrome: false })
+    const snap = gateway.snapshot()
+    expect(snap.phone?.layout?.rev).toBe(23)
+    expect(snap.phone?.layout?.modules.Pc?.x).toBe(0)
   })
 })
