@@ -3,18 +3,19 @@
  *
  * 移植自 dock-hub proactive.py 的判断骨架：三重闸（免打扰/每日配额/同一件事
  * 一天一次）+ Sustained（持续坏才开口）。数据源：
- * - hub 真身 /v1/snapshot：pc（温度/内存/在线）、devices（离线盯梢）
+ * - hubBaseUrl 非空时才拉 /v1/snapshot（pc 温度/内存、设备离线）。空地址跳过，不访问旧 hub
  * - Open-Meteo：天气与 PM2.5（免费、无需 key）
  * - k20 屏：TCP 探活 phoneHost:phonePort
  *
- * 没做的（诚实标注）：久坐提醒。键鼠 idle 是 hub 内部量（probe 上报 service.py，
- * 不外露到 /v1/snapshot），dsh 侧拿不到真值——不把「没数据」当「在休息」，
- * 等哪天 idle 进了快照再补（同 hub SedentaryWatch 的口径）。
+ * 久坐：快照里的 idle_sec（键鼠空闲秒数）。没有这个字段就只当不知道，
+ * 不当成已经休息。空闲满 5 分钟清零。0 分钟 = 不提醒。
  */
 
 import type { Context } from '@deepseek-ai/cordis'
 import { connect as netConnect, type Socket } from 'node:net'
-import { AlertGate, Sustained } from './gates.ts'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+import { AlertGate, inQuietHours, SedentaryWatch, Sustained } from './gates.ts'
 import { createNotifyClient, type NotifyClient } from './notify.ts'
 import { Config, type KeeperWatchConfig } from './config.ts'
 import { applyWatchOverrides, readWatchOverridesSync } from './overrides.ts'
@@ -34,6 +35,8 @@ export { Config }
 interface HubSnapshot {
   pc?: { online?: boolean; cpu?: { temp_celsius?: number }; memory?: { percent?: number } }
   devices?: { id?: string; online?: boolean }[]
+  /** 键鼠空闲秒数。缺省 = 这一拍不知道。 */
+  idle_sec?: number
 }
 
 export interface Fetchers {
@@ -56,7 +59,8 @@ export interface Watcher {
 }
 
 const WEATHER_CHECK_MS = 30 * 60_000
-const AIR_CHECK_MS = 60 * 60_000
+// 采样必须密于持续窗口，否则「坏满 10 分钟」要等下一次小时级轮询才可能成立。
+const AIR_CHECK_MS = 5 * 60_000
 const AIR_SUSTAINED_SEC = 600
 // 桥发送失败的重试冷静期：别每个 tick 都往挂掉的桥上撞
 const SEND_RETRY_MS = 10 * 60_000
@@ -64,13 +68,14 @@ const SEND_RETRY_MS = 10 * 60_000
 /** 判定核心（纯逻辑，测试可直接驱动）。
  *
  * config 传可变对象（apply 侧每个 tick 先刷新覆盖文件），闸门参数在 tick 头
- * 热重建——面板改免打扰/配额即刻生效，不用重启 dsh。
+ * 热更新——面板改免打扰/配额即刻生效，当日配额和「今天说过」保留。
  */
 export function createWatcher(config: KeeperWatchConfig, deps: WatcherDeps, log?: {
   info(fmt: string, ...args: unknown[]): void
   warn(fmt: string, ...args: unknown[]): void
 }): Watcher {
-  let gate = new AlertGate({ quietHours: config.quietHours, dailyLimit: config.dailyLimit })
+  const gate = new AlertGate({ quietHours: config.quietHours, dailyLimit: config.dailyLimit })
+  const sedentary = new SedentaryWatch()
   let gateKey = JSON.stringify([config.quietHours, config.dailyLimit])
   const sustained = new Sustained()
   const send = (text: string) => deps.notify.send(text)
@@ -79,7 +84,8 @@ export function createWatcher(config: KeeperWatchConfig, deps: WatcherDeps, log?
   const sendFailAt = new Map<string, number>()
 
   function say(key: string, text: string, now: Date): void {
-    if ((sendFailAt.get(key) ?? 0) > Date.now() - SEND_RETRY_MS) return
+    const at = now.getTime()
+    if ((sendFailAt.get(key) ?? 0) > at - SEND_RETRY_MS) return
     void gate
       .alert(key, now, () => send(text))
       .then((d) => {
@@ -87,7 +93,7 @@ export function createWatcher(config: KeeperWatchConfig, deps: WatcherDeps, log?
           log?.info('已提醒 [%s]：%s', key, text)
           sendFailAt.delete(key)
         } else if (d.reason === 'off') {
-          sendFailAt.set(key, Date.now()) // send 失败：冷静期后重试
+          sendFailAt.set(key, at) // 桥没通：冷静期后重试（配额/免打扰不走这条）
         }
       })
       .catch(() => {})
@@ -98,12 +104,13 @@ export function createWatcher(config: KeeperWatchConfig, deps: WatcherDeps, log?
       // 总开关（面板可关）：关着就闭嘴，坏状态清零，重开后从零计时
       if (!config.enabled) {
         sustained.clearAll()
+        sedentary.reset()
         return
       }
-      // 闸门参数热重建（面板改免打扰/配额即刻生效）；重建会重置当日计数，可接受
+      // 闸门参数热更新。configure 保留当日计数和「今天说过」，改配额不会把同一件事再说一遍。
       const key = JSON.stringify([config.quietHours, config.dailyLimit])
       if (key !== gateKey) {
-        gate = new AlertGate({ quietHours: config.quietHours, dailyLimit: config.dailyLimit })
+        gate.configure({ quietHours: config.quietHours, dailyLimit: config.dailyLimit })
         gateKey = key
       }
       // —— PC（温度 / 内存 / 离线）——
@@ -126,6 +133,15 @@ export function createWatcher(config: KeeperWatchConfig, deps: WatcherDeps, log?
             }
           } else {
             sustained.clear('memory')
+          }
+          if (pc?.online) {
+            const idle = typeof snap.idle_sec === 'number' ? snap.idle_sec : null
+            if (sedentary.tick(idle, now.getTime(), config.sedentaryMinutes) && !inQuietHours(config.quietHours, now)) {
+              say('sedentary', '坐了一阵了，起来走走。', now)
+              sedentary.reset()
+            }
+          } else {
+            sedentary.reset()
           }
           if (config.pcOfflineAlert && pc) {
             if (sustained.check('pc_offline', pc.online === false, now.getTime(), config.pcOfflineSustainedSec)) {
@@ -155,9 +171,10 @@ export function createWatcher(config: KeeperWatchConfig, deps: WatcherDeps, log?
         sustained.clear('phone_offline')
       }
 
-      // —— 天气突变（半小时看一眼）——
-      if (config.weatherEnabled && Date.now() - lastWeatherCheck >= WEATHER_CHECK_MS) {
-        lastWeatherCheck = Date.now()
+      // —— 天气突变（半小时看一眼）。间隔跟 tick 时钟走，测试注入的 now 才管得住。
+      const tickAt = now.getTime()
+      if (config.weatherEnabled && tickAt - lastWeatherCheck >= WEATHER_CHECK_MS) {
+        lastWeatherCheck = tickAt
         try {
           const w = await deps.fetchHourly(config.weatherCity)
           const cond = wmoCondition(w.currentCode)
@@ -169,9 +186,9 @@ export function createWatcher(config: KeeperWatchConfig, deps: WatcherDeps, log?
         }
       }
 
-      // —— PM2.5 超标（一小时看一眼，超标要持续 10 分钟才说）——
-      if (config.weatherEnabled && Date.now() - lastAirCheck >= AIR_CHECK_MS) {
-        lastAirCheck = Date.now()
+      // —— PM2.5 超标（5 分钟看一眼，连续坏满 10 分钟才说）——
+      if (config.weatherEnabled && tickAt - lastAirCheck >= AIR_CHECK_MS) {
+        lastAirCheck = tickAt
         try {
           const pm25 = await deps.fetchPm25(config.weatherCity)
           if (sustained.check('pm25', pm25 >= config.pm25Threshold, now.getTime(), AIR_SUSTAINED_SEC)) {
@@ -186,7 +203,10 @@ export function createWatcher(config: KeeperWatchConfig, deps: WatcherDeps, log?
 }
 
 export function apply(ctx: Context, config: KeeperWatchConfig): void {
-  const notify = createNotifyClient({ url: config.notifyUrl, tokenPath: config.notifyTokenPath })
+  const notify = createNotifyClient({
+    url: config.notifyUrl,
+    tokenPath: config.notifyTokenPath.trim() || join(homedir(), '.dsh', 'weixin', 'notify.json'),
+  })
 
   // 面板运行时覆盖（~/.dsh/keeper-settings.json）：每个 tick 现读，
   // 缺文件/缺字段回落 Config 基线。live 对象传给 watcher，tick 内读到的都是现值。
@@ -200,6 +220,7 @@ export function apply(ctx: Context, config: KeeperWatchConfig): void {
   refreshLive()
 
   async function fetchSnapshot(): Promise<HubSnapshot | null> {
+    if (!config.hubBaseUrl.trim()) return null
     const resp = await fetch(`${config.hubBaseUrl}/v1/snapshot`, {
       headers: config.hubToken ? { authorization: `Bearer ${config.hubToken}` } : {},
       signal: AbortSignal.timeout(8_000),

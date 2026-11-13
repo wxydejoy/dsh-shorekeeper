@@ -30,6 +30,8 @@ export interface KeeperWatchConfig {
   /** 内存压力阈值（%）与持续秒数 */
   memoryPercentThreshold: number
   memorySustainedSec: number
+  /** 连续使用电脑多少分钟提醒起来走走。0 = 不提。键鼠空闲 5 分钟算休息过。 */
+  sedentaryMinutes: number
   /** 设备离线：盯 snapshot 里这些设备 id，持续坏这么久才说；空 = 不盯 */
   watchDeviceIds: string[]
   deviceOfflineSustainedSec: number
@@ -51,7 +53,7 @@ export const Config = Schema.object({
     .description('免打扰时段，允许跨零点')
     .default(['23:00', '07:00']),
   dailyLimit: Schema.number().description('异动提醒每日配额').default(12),
-  hubBaseUrl: Schema.string().description('dock-hub 真身地址').default('http://127.0.0.1:17890'),
+  hubBaseUrl: Schema.string().description('旧 hub 快照地址。留空则不拉 PC 温度和设备名单（天气和手机探活照常）').default(''),
   hubToken: Schema.string().description('hub API token').default(''),
   phoneHost: Schema.string().description('k20 屏主机名/IP；空 = 不查').default('k20.lan'),
   phonePort: Schema.number().description('k20 adb 端口（TCP 探活用）').default(5555),
@@ -62,6 +64,7 @@ export const Config = Schema.object({
   cpuTempSustainedSec: Schema.number().description('过热要持续坏的秒数').default(120),
   memoryPercentThreshold: Schema.number().description('内存压力阈值 %').default(92),
   memorySustainedSec: Schema.number().description('内存压力要持续坏的秒数').default(300),
+  sedentaryMinutes: Schema.number().description('连续用电脑多少分钟提醒起来走走；0 = 不提').default(90),
   watchDeviceIds: Schema.array(Schema.string())
     .description('盯离线的 hub 设备 id；空 = 不盯')
     .default([]),
@@ -70,6 +73,6 @@ export const Config = Schema.object({
   pcOfflineSustainedSec: Schema.number().description('PC 离线要持续的秒数').default(600),
   phoneOfflineSustainedSec: Schema.number().description('手机离线要持续的秒数').default(300),
   notifyUrl: Schema.string().description('微信 notify 桥地址').default('http://127.0.0.1:47832/notify'),
-  notifyTokenPath: Schema.string().description('notify 桥 token 文件路径').default('/Users/weiekko/.dsh/weixin/notify.json'),
+  notifyTokenPath: Schema.string().description('notify 桥 token 文件路径；空 = ~/.dsh/weixin/notify.json').default(''),
   tickSec: Schema.number().description('主循环间隔秒').default(60),
 }) as Schema<KeeperWatchConfig>

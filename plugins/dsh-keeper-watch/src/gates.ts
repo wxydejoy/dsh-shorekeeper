@@ -29,6 +29,31 @@ export function inQuietHours(clock: readonly [string, string] | [], now: Date): 
   return current >= start || current < end
 }
 
+/** 连续坐着多久。键鼠空闲满 5 分钟算休息过，计时清零。
+ *  idle 为 null 表示这一拍不知道：不开始、不清零、不提醒。 */
+export class SedentaryWatch {
+  static readonly BREAK_SEC = 300
+  private since: number | null = null
+
+  tick(idle: number | null, nowMs: number, limitMinutes: number): boolean {
+    if (limitMinutes <= 0) return false
+    if (idle === null) return false
+    if (idle >= SedentaryWatch.BREAK_SEC) {
+      this.since = null
+      return false
+    }
+    if (this.since === null) {
+      this.since = nowMs
+      return false
+    }
+    return nowMs - this.since >= limitMinutes * 60_000
+  }
+
+  reset(): void {
+    this.since = null
+  }
+}
+
 /** 某件事要连续坏多久才值得开口。坏着计时，修好清零。 */
 export class Sustained {
   private first = new Map<string, number>()
@@ -80,7 +105,8 @@ export class AlertGate {
 
   /** key = 这件事的名字（如 'pm25' / 'offline:lamp'）。send 成功才算说过。 */
   async alert(key: string, now: Date, send: () => boolean | Promise<boolean>): Promise<GateDecision> {
-    if (this.opts.dailyLimit === 0) return { said: false, reason: 'off' }
+    // 0 = 今天不再提醒。用 quota 而不是 off：off 在 watcher 里表示桥没通，会进重试冷静期。
+    if (this.opts.dailyLimit === 0) return { said: false, reason: 'quota' }
     this.resetIfNewDay(now)
     const today = dayKey(now)
     if (this.alerted.get(key) === today) return { said: false, reason: 'dup' }

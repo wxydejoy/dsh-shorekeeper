@@ -75,6 +75,7 @@ describe('createWatcher 端到端（假数据驱动）', () => {
       cpuTempSustainedSec: 120,
       memoryPercentThreshold: 92,
       memorySustainedSec: 300,
+      sedentaryMinutes: 90,
       watchDeviceIds: [],
       deviceOfflineSustainedSec: 600,
       pcOfflineAlert: false,
@@ -203,5 +204,66 @@ describe('createWatcher 端到端（假数据驱动）', () => {
     await watcher.tickOnce(at(10, 1))
     await watcher.tickOnce(new Date(at(10, 1).getTime() + 121_000))
     expect(sent).toHaveLength(1) // 恢复后正常走
+  })
+
+  it('改每日配额不会把今天已经说过的事再说一遍', async () => {
+    const cfg = makeConfig()
+    const sent: string[] = []
+    const watcher = createWatcher(cfg, {
+      fetchSnapshot: async () => ({ pc: { online: true, cpu: { temp_celsius: 90 }, memory: { percent: 40 } } }),
+      phoneAlive: async () => true,
+      notify: { send: async (t) => (sent.push(t), true) },
+      fetchHourly: async () => ({ currentCelsius: 14, currentCode: 0, hourly: { time: [], celsius: [], code: [], windKmh: [] } }),
+      fetchPm25: async () => 20,
+    })
+    const t0 = at(10)
+    await watcher.tickOnce(t0)
+    await watcher.tickOnce(new Date(t0.getTime() + 121_000))
+    expect(sent).toHaveLength(1)
+    cfg.dailyLimit = 20
+    await watcher.tickOnce(new Date(t0.getTime() + 180_000))
+    expect(sent).toHaveLength(1)
+  })
+
+  it('PM2.5：连续坏满 10 分钟才说，5 分钟采样够得着这个窗口', async () => {
+    const sent: string[] = []
+    const watcher = createWatcher(makeConfig({ weatherEnabled: true }), {
+      fetchSnapshot: async () => null,
+      phoneAlive: async () => true,
+      notify: { send: async (t) => (sent.push(t), true) },
+      fetchHourly: async () => ({ currentCelsius: 14, currentCode: 0, hourly: { time: [], celsius: [], code: [], windKmh: [] } }),
+      fetchPm25: async () => 120,
+    })
+    const t0 = at(10)
+    await watcher.tickOnce(t0)
+    await watcher.tickOnce(new Date(t0.getTime() + 5 * 60_000))
+    expect(sent).toHaveLength(0)
+    await watcher.tickOnce(new Date(t0.getTime() + 10 * 60_000))
+    expect(sent.some((text) => text.includes('PM2.5'))).toBe(true)
+  })
+
+  it('久坐：连续使用满 90 分钟才说；空闲满 5 分钟算休息，计时重来', async () => {
+    const sent: string[] = []
+    let idle = 10
+    const watcher = createWatcher(makeConfig(), {
+      fetchSnapshot: async () => ({ pc: { online: true, memory: { percent: 40 } }, idle_sec: idle }),
+      phoneAlive: async () => true,
+      notify: { send: async (t) => (sent.push(t), true) },
+      fetchHourly: async () => ({ currentCelsius: 14, currentCode: 0, hourly: { time: [], celsius: [], code: [], windKmh: [] } }),
+      fetchPm25: async () => 20,
+    })
+    const t0 = at(10)
+    await watcher.tickOnce(t0)
+    await watcher.tickOnce(new Date(t0.getTime() + 89 * 60_000))
+    expect(sent).toHaveLength(0)
+    await watcher.tickOnce(new Date(t0.getTime() + 90 * 60_000))
+    expect(sent).toEqual(['坐了一阵了，起来走走。'])
+
+    idle = 300
+    await watcher.tickOnce(new Date(t0.getTime() + 91 * 60_000))
+    idle = 10
+    await watcher.tickOnce(new Date(t0.getTime() + 92 * 60_000))
+    await watcher.tickOnce(new Date(t0.getTime() + 181 * 60_000))
+    expect(sent).toHaveLength(1)
   })
 })
