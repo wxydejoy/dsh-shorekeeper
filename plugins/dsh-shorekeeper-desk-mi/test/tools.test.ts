@@ -1,8 +1,22 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi, afterAll } from 'vitest'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import type { ToolDefinition, ToolRunContext } from '@deepseek-ai/dsh-tools'
 import { createDeskMiTools } from '../src/tools.ts'
 import type { MiBridge } from '../src/bridge.ts'
 import type { DeskMiConfig } from '../src/config.ts'
+
+// 闸门 effectiveControl() 会叠读 $DSH_HOME/keeper-settings.json 的真实覆写；
+// 本机该文件 controlEnabled=true，不隔离会把「红线」测试顶开（2026-11-13 实证）。
+const __sandbox = mkdtempSync(join(tmpdir(), 'desk-mi-test-'))
+const __prevDshHome = process.env.DSH_HOME
+process.env.DSH_HOME = __sandbox
+afterAll(() => {
+  if (__prevDshHome === undefined) delete process.env.DSH_HOME
+  else process.env.DSH_HOME = __prevDshHome
+  rmSync(__sandbox, { recursive: true, force: true })
+})
 
 /** execute 的第二参（ToolRunContext）在本插件实现里不使用，测试传 null 即可。 */
 const exec = null as unknown as ToolRunContext
