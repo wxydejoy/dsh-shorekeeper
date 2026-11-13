@@ -26,6 +26,29 @@ export interface TtsClientOptions {
 }
 
 const TIMEOUT_MS = { speech: 120_000, stop: 2_000 } as const
+// 502 退避重试：服务端每段朗读都新开一次 PortAudio 输出流，macOS 上前一个流刚关
+// 设备偶发还没释放（-9986 Internal PortAudio error），等几百毫秒重开就好。实测
+// 单发请求几乎必成、连发朗读偶发 502——一次 502 不值得让整场朗读停机。
+const RETRY_DELAYS_MS = [500, 1_500] as const
+const RETRYABLE_STATUS = new Set([0, 502, 503, 504])
+
+function sleepAbortable(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException('The operation was aborted.', 'AbortError'))
+      return
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort)
+      resolve()
+    }, ms)
+    const onAbort = () => {
+      clearTimeout(timer)
+      reject(new DOMException('The operation was aborted.', 'AbortError'))
+    }
+    signal?.addEventListener('abort', onAbort, { once: true })
+  })
+}
 
 export class TtsClient {
   private readonly baseUrl: string
@@ -36,17 +59,37 @@ export class TtsClient {
     this.fetchImpl = options.fetchImpl ?? fetch
   }
 
-  /** 合成并在服务端喇叭出声（play:true）。慢请求：整段按长度可能数十秒。 */
+  /** 合成并在服务端喇叭出声（play:true）。慢请求：整段按长度可能数十秒。
+   *  5xx/网络错按退避重试（PortAudio 偶发 -9986），4xx 与 abort 立即抛。 */
   async speak(input: string, options: { speed?: number; signal?: AbortSignal } = {}): Promise<void> {
     const body: Record<string, unknown> = { input, play: true }
     if (options.speed !== undefined) body.speed = options.speed
-    let response: Response
     const init: RequestInit = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'audio/*' },
       body: JSON.stringify(body),
     }
     if (options.signal !== undefined) init.signal = options.signal
+    let lastError: unknown = null
+    for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt += 1) {
+      if (attempt > 0) {
+        await sleepAbortable(RETRY_DELAYS_MS[attempt - 1]!, options.signal)
+      }
+      try {
+        await this.speakOnce(init)
+        return
+      } catch (error) {
+        if (error instanceof Error && error.name === 'AbortError') throw error
+        const retryable = !(error instanceof TtsRequestError) || RETRYABLE_STATUS.has(error.status)
+        if (!retryable) throw error
+        lastError = error
+      }
+    }
+    throw lastError
+  }
+
+  private async speakOnce(init: RequestInit): Promise<void> {
+    let response: Response
     try {
       response = await this.fetchImpl(`${this.baseUrl}/v1/audio/speech`, init)
     } catch (error) {
