@@ -21,6 +21,9 @@ export interface ListenStateFile {
   version: number
   current_id: string | null
   timer_min: number
+  /** 朗读音量 0-100（采样增益，不动系统音量）。缺省 100 = 不衰减。 */
+  volume: number
+  muted: boolean
   books: Record<string, { offset: number; updated_at: number }>
 }
 
@@ -50,7 +53,7 @@ export class ListenState {
 
   private load(): ListenStateFile {
     if (!existsSync(this.path)) {
-      return { version: 1, current_id: null, timer_min: 30, books: {} }
+      return { version: 1, current_id: null, timer_min: 30, volume: 100, muted: false, books: {} }
     }
     try {
       const parsed = JSON.parse(readFileSync(this.path, 'utf-8')) as Partial<ListenStateFile>
@@ -58,10 +61,12 @@ export class ListenState {
         version: 1,
         current_id: typeof parsed.current_id === 'string' ? parsed.current_id : null,
         timer_min: typeof parsed.timer_min === 'number' ? parsed.timer_min : 30,
+        volume: typeof parsed.volume === 'number' ? Math.min(100, Math.max(0, parsed.volume)) : 100,
+        muted: parsed.muted === true,
         books: parsed.books && typeof parsed.books === 'object' ? parsed.books : {},
       }
     } catch {
-      return { version: 1, current_id: null, timer_min: 30, books: {} }
+      return { version: 1, current_id: null, timer_min: 30, volume: 100, muted: false, books: {} }
     }
   }
 
@@ -87,6 +92,24 @@ export class ListenState {
 
   get currentId(): string | null {
     return this.data.current_id
+  }
+
+  get volume(): number {
+    return this.data.volume
+  }
+
+  get muted(): boolean {
+    return this.data.muted
+  }
+
+  setVolume(volume: number): void {
+    this.data.volume = Math.min(100, Math.max(0, Math.round(volume)))
+    this.persist()
+  }
+
+  setMuted(muted: boolean): void {
+    this.data.muted = muted
+    this.persist()
   }
 
   get timerMin(): number {
@@ -274,7 +297,7 @@ export class ListenEngine {
       if (!chunk) break
       const startedAt = Date.now()
       try {
-        await this.tts.speak(chunk.text, { speed, signal: controller.signal })
+        await this.tts.speak(chunk.text, { speed, signal: controller.signal, volume: this.state.muted ? 0 : this.state.volume })
       } catch (error) {
         if (controller.signal.aborted) {
           stoppedBy = 'user'

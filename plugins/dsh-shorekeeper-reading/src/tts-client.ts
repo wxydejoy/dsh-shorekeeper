@@ -61,9 +61,13 @@ export class TtsClient {
 
   /** 合成并在服务端喇叭出声（play:true）。慢请求：整段按长度可能数十秒。
    *  5xx/网络错按退避重试（PortAudio 偶发 -9986），4xx 与 abort 立即抛。 */
-  async speak(input: string, options: { speed?: number; signal?: AbortSignal } = {}): Promise<void> {
+  async speak(
+    input: string,
+    options: { speed?: number; signal?: AbortSignal; volume?: number } = {},
+  ): Promise<void> {
     const body: Record<string, unknown> = { input, play: true }
     if (options.speed !== undefined) body.speed = options.speed
+    if (options.volume !== undefined) body.volume = options.volume
     const init: RequestInit = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'audio/*' },

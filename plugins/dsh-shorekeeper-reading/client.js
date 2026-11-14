@@ -5,7 +5,7 @@
 // the /reading-panel RPC channel — no model round-trip anywhere.
 //
 // Sections: 正在朗读（进度 + 停止）· 书架（点书续读 / 目录选章 / 导入 txt）
-// · 播放设置（语速 / 定时 / 系统音量）。
+// · 播放设置（语速 / 定时 / 朗读音量）。
 // 断点与守岸人对话侧（reading_listen / reading_stop 工具）同一条引擎、同一份
 // listen-state.json，两边互通。
 //
@@ -44,7 +44,7 @@ window.__ModuleLoader__.load({
       speed: ['语速', 'Speed'],
       timer: ['定时（分钟，默认 30，0 = 不限）', 'Timer (min, default 30, 0 = unlimited)'],
       timerHint: ['默认读 30 分钟，只对这一次有效', 'Reads for 30 minutes by default; this play only'],
-      volume: ['系统音量', 'System volume'],
+      volume: ['朗读音量', 'Reading volume'],
       muted: ['静音', 'Mute'],
       importPick: ['选 txt 文件导入', 'Pick a txt file'],
       importing: ['导入中…', 'Importing…'],

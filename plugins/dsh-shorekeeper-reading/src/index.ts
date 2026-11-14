@@ -16,7 +16,6 @@ import { Config, resolveDataDir, type ReadingConfig } from './config.ts'
 import { TtsClient } from './tts-client.ts'
 import { ListenEngine, ListenState } from './listen.ts'
 import { findChapters, type ChapterMark } from './speech.ts'
-import { getVolume, setVolume, setMuted } from './volume.ts'
 
 // webServer：挂面板路由最终要走 webServer.register，inject 缺声明会
 // 「cannot get property "webServer" without inject」直接激活失败（k20 同款声明）。
@@ -229,20 +228,20 @@ function registerPanelRpc(
         }
 
         case 'volume':
-          return { ok: true, value: await getVolume() }
+          return { ok: true, value: { volume: state.volume, muted: state.muted } }
 
         case 'setVolume': {
           if (typeof payload.volume !== 'number' || !Number.isFinite(payload.volume)) {
             throw new Error('volume 必须是数字（0–100）')
           }
-          await setVolume(payload.volume)
-          return { ok: true, value: await getVolume() }
+          state.setVolume(payload.volume)
+          return { ok: true, value: { volume: state.volume, muted: state.muted } }
         }
 
         case 'setMuted': {
           if (typeof payload.muted !== 'boolean') throw new Error('muted 必须是布尔')
-          await setMuted(payload.muted)
-          return { ok: true, value: await getVolume() }
+          state.setMuted(payload.muted)
+          return { ok: true, value: { volume: state.volume, muted: state.muted } }
         }
 
         default:
