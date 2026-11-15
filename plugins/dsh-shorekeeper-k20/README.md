@@ -47,11 +47,16 @@ k20 安卓横屏摆件的 DSH 驱动插件：把这块屏变成守岸人的「�
 | 走向 | 通道 | 说明 |
 |---|---|---|
 | 元数据（snapshot / save / backgrounds / select / remove / clear） | `POST /k20-layout/<action>`（connection rpc 信封） | `src/index.ts` 的 `registerLayoutPanel` 直挂宿主 webServer，不经过 connection.rpc 的 fiber |
-| 缩略图、视频预览 | `GET /k20-bg/media/<id>` | 插件代持手机 cookie 转发 `:17920/api/backgrounds/<id>/media`，浏览器不直连手机 |
+| 缩略图 | `GET /k20-bg/poster/<id>` | ffmpeg 抽一帧缩到 320 宽，缓存到 `~/.dsh/k20-bg-posters/`，键含 bytes+modified |
+| 视频预览、原图 | `GET /k20-bg/media/<id>` | 插件代持手机 cookie 转发 `:17920/api/backgrounds/<id>/media`，浏览器不直连手机 |
 | 上传 | `POST /k20-bg/upload?name=&realname=`（body 为文件原字节） | 边收边转，200MB 视频不进内存做 base64 |
 
-两个坑（2026-11-15 实测）：
+三个坑（2026-11-15 实测）：
 
 - 手机端 `BackgroundServer.readForm` 用 `Content-Length` 限流读，**chunked 上传会被当空文件**（400）。所以转发时必须把
   「multipart 头 + 文件 + 尾」的总长度算出来显式带上；拿不到长度才退回整段缓冲。
 - 上传要实名：手机校验 2–20 个字、不能带数字，面板默认填「守岸人」，改署名再传。
+- 视频抽帧不能喂管道：`output_2k.mp4`（43MB / 2560×1440）的 moov 在尾部，stdin 不可 seek，
+  ffmpeg 会读到 EOF 再报没帧。视频一律先落临时文件，`-ss` 放在 `-i` 前快进；图片才走管道。
+  首次抽帧 = 一次整段下载（43MB 约 10s），之后命中缓存 0.1s。
+- ffmpeg 依赖：默认找 `/opt/homebrew/bin/ffmpeg`（launchd 的 PATH 里有），也可用 `DSH_FFMPEG` 指路径。

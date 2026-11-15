@@ -99,6 +99,22 @@ window.__ModuleLoader__.load({
       return d
     }
 
+    function Thumb({ id, video, alt }) {
+      // 先要服务端抽好的 320 宽小图；抽不出来再退回原文件；都不行就留个占位。
+      const [step, setStep] = useState(0)
+      if (step >= 2) return h('span', null, video ? '▶' : '·')
+      const src = step === 0
+        ? `/k20-bg/poster/${encodeURIComponent(id)}`
+        : `/k20-bg/media/${encodeURIComponent(id)}`
+      return h('img', {
+        src,
+        alt,
+        loading: 'lazy',
+        draggable: false,
+        onError: () => setStep(step + 1),
+      })
+    }
+
     function LayoutPanel({ call }) {
       const [snap, setSnap] = useState(null)
       const [draft, setDraft] = useState({})
@@ -369,8 +385,8 @@ window.__ModuleLoader__.load({
                     onClick: isVideo ? () => window.open(mediaUrl(item.id), '_blank') : undefined,
                   },
                   isVideo
-                    ? h('span', null, '▶')
-                    : h('img', { src: mediaUrl(item.id), alt: item.name, loading: 'lazy' }),
+                    ? h(Thumb, { id: item.id, video: true, alt: item.name })
+                    : h(Thumb, { id: item.id, video: false, alt: item.name }),
                   item.id === bgCurrent ? h('span', { className: 'k20-bg-badge' }, '使用中') : null,
                 ),
                 h(

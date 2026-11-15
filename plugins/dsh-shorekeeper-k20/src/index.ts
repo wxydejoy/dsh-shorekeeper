@@ -6,12 +6,14 @@
 
 import { randomUUID } from 'node:crypto'
 import { Readable } from 'node:stream'
+import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { createDeskVoice, type VoiceSessions } from './companion-voice.ts'
 import { HubClient } from './hub-client.ts'
 import { BackgroundClient, BackgroundRequestError } from './background-client.ts'
+import { createPosterStore, type PosterStore } from './poster.ts'
 import { GatewayClient } from './gateway.ts'
 import { createK20Tools } from './tools.ts'
 import { Config, hubBaseUrl, backgroundBaseUrl, type K20Config } from './config.ts'
@@ -195,7 +197,10 @@ function registerLayoutPanel(ctx: Context, deps: LayoutPanelDeps): void {
     return
   }
   registerLayoutChannel(ctx, webServer, channel, handle)
-  registerBackgroundRoutes(ctx, webServer, deps.background)
+  registerBackgroundRoutes(ctx, webServer, deps.background, createPosterStore({
+    background: deps.background,
+    log: (message) => ctx.logger('k20').warn(message),
+  }))
 }
 
 /** 壁纸/背景的二进制通道：缩略图与预览流、上传流。
@@ -203,7 +208,13 @@ function registerLayoutPanel(ctx: Context, deps: LayoutPanelDeps): void {
  * 浏览器不直连手机 :17920（跨源 + cookie 在别人手里），这里由插件代持会话转发。
  * RPC 只传元数据（列表/切换/删除/清空），字节走这两条 HTTP 路由。
  */
-function registerBackgroundRoutes(ctx: Context, webServer: WebServerLike, background: BackgroundClient): void {  const prefix = '/k20-bg'
+function registerBackgroundRoutes(
+  ctx: Context,
+  webServer: WebServerLike,
+  background: BackgroundClient,
+  posters: PosterStore,
+): void {
+  const prefix = '/k20-bg'
   type Res = import('node:http').ServerResponse
   type Req = import('node:http').IncomingMessage
   const fail = (res: Res, status: number, message: string): void => {
@@ -237,6 +248,27 @@ function registerBackgroundRoutes(ctx: Context, webServer: WebServerLike, backgr
               return
             }
             Readable.fromWeb(upstream.body as import('node:stream/web').ReadableStream<Uint8Array>).pipe(res)
+            return
+          }
+          if (req.method === 'GET' && rest.startsWith('/poster/')) {
+            const id = decodeURIComponent(rest.slice('/poster/'.length))
+            if (id === '') {
+              fail(res, 400, '缺少背景 id')
+              return
+            }
+            const index = await background.backgrounds()
+            const item = index.items.find((entry) => entry.id === id)
+            if (item === undefined) {
+              fail(res, 404, '没有这个背景')
+              return
+            }
+            const data = await readFile(await posters.get(item))
+            res.writeHead(200, {
+              'content-type': 'image/jpeg',
+              'content-length': String(data.byteLength),
+              'cache-control': 'private, max-age=3600',
+            })
+            res.end(data)
             return
           }
           if (req.method === 'POST' && rest === '/upload') {
@@ -276,7 +308,7 @@ function registerBackgroundRoutes(ctx: Context, webServer: WebServerLike, backgr
   }
   try {
     ctx.effect(() => webServer.register(route), 'k20: 背景壁纸通道')
-    ctx.logger('k20').info('背景壁纸通道已挂：%s/media/* %s/upload', prefix, prefix)
+    ctx.logger('k20').info('背景壁纸通道已挂：%s/media/* %s/poster/* %s/upload', prefix, prefix, prefix)
   } catch (error) {
     ctx.logger('k20').warn('背景壁纸通道挂载失败：%s', error instanceof Error ? error.message : String(error))
   }
