@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOME</key>
+		<string>/Users/weiekko</string>
+		<key>PATH</key>
+		<string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+		<key>GATE_LISTEN</key>
+		<string>0.0.0.0:3092</string>
+		<key>GATE_TLS_CERT</key>
+		<string>/Users/weiekko/.config/dsh-web-tls/cert.pem</string>
+		<key>GATE_TLS_KEY</key>
+		<string>/Users/weiekko/.config/dsh-web-tls/key.pem</string>
+	</dict>
+	<key>KeepAlive</key>
+	<true/>
+	<key>Label</key>
+	<string>cn.weiekko.dsh-web-lan-gate-tls</string>
+	<key>LimitLoadToSessionType</key>
+	<array>
+		<string>Aqua</string>
+		<string>Background</string>
+	</array>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/opt/homebrew/bin/node</string>
+		<string>/Users/weiekko/dsh-shorekeeper/scripts/web-lan-gate.js</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StandardErrorPath</key>
+	<string>/Users/weiekko/.dsh/logs/dsh-web-lan-gate-tls.err.log</string>
+	<key>StandardOutPath</key>
+	<string>/Users/weiekko/.dsh/logs/dsh-web-lan-gate-tls.out.log</string>
+	<key>ThrottleInterval</key>
+	<integer>10</integer>
+	<key>WorkingDirectory</key>
+	<string>/Users/weiekko/dsh-shorekeeper</string>
+</dict>
+</plist>

@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
-"""TLS 前门：把 https://<lan>:3092 解密后转发到 dsh web (:3090)。
-用途：局域网设备（k20/手机）开语音模式——getUserMedia 需要 secure context，
-HTTP 不行，自签 HTTPS 可以（浏览器点一次「继续访问」）。
+"""【已退役 2026-11-15】TLS 前门：把 https://<lan>:3092 解密后转发到 dsh web (:3090)。
+
+为什么不用了：这是裸 TCP 转发，不改 Host，而 dsh 的登录 cookie 钉了 authority
+（签发时的 Host:Port）。经它访问时 Host 是 :3092，3090 拿到的 cookie 一律 401，
+每次重启都得重新回 Mac 抓 ?token=。现由 scripts/web-lan-gate.js 的 TLS 模式接管
+（launchd `cn.weiekko.dsh-web-lan-gate-tls`）：同样自签证书 + 自动补 token +
+Host/Origin/Referer 改写，与 :3093 共用一份登录。本文件保留仅供回滚，别再挂 launchd。
+
+原说明：用途——局域网设备（k20/手机）开语音模式 getUserMedia 需要 secure context。
 证书：~/.config/dsh-web-tls/{cert.pem,key.pem}（SAN 含 10.14.14.117/127.0.0.1/k20.lan）。
-跑法：python3 scripts/tls-forward.py  （建议挂 launchd 常驻）
 """
 import socket
 import ssl

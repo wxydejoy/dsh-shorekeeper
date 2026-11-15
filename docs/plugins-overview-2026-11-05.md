@@ -96,7 +96,7 @@
 ### dsh 侧语音装件（市场件，配置面自建）
 
 - **dsh-tts**：朗读回复引擎。custom→keeper-tts 链路 + edge 兜底。**坑**：custom 需要 `CUSTOM_TTS_API_KEY` env（launchd plist 已配占位值 keeper-local），key 缺失/链路失败会**静默回落 edge 小晓**（音不对+慢的根因，排查口：`/dsh-tts/stats` 看 custom 熔断计数）。
-- **dsh-voice-mode**：语音模式（STT/VAD barge-in/字幕）。STT 模型缓存在 `~/.cache/dsh-voice-mode/`；`/voice-mode/asr` 只收 Float32 LE 16k PCM（Int16 静默返回空 text，巨坑）；allowLan 已开。浏览器侧必须 secure context：**局域网走 https://10.14.14.117:3092（tls-forward），本机走 http://127.0.0.1:3091（loopback-forward）**。
+- **dsh-voice-mode**：语音模式（STT/VAD barge-in/字幕）。STT 模型缓存在 `~/.cache/dsh-voice-mode/`；`/voice-mode/asr` 只收 Float32 LE 16k PCM（Int16 静默返回空 text，巨坑）；allowLan 已开。浏览器侧必须 secure context：**局域网走 https://10.14.14.117:3092（TLS 门卫，自动补 token），本机走 http://127.0.0.1:3091（loopback-forward）**。
 - 局限：手机扬声器远场收音够触发打断但不够 ASR 解码（音量物理限制，真人贴麦无碍）。
 
 ### dsh-keeper-console —— 守岸人设置面板（本日新增）
@@ -135,9 +135,21 @@
 | 脚本 | 用途 | 注意 |
 |---|---|---|
 | `scripts/loopback-forward.py` | 127.0.0.1:3091 → LAN:3090 TCP 转发 | 浏览器语音 loopback 入口；**已挂 launchd `cn.weiekko.dsh-web-loopback-forward`**（2026-11-13） |
-| `scripts/tls-forward.py` | 0.0.0.0:3092 自签 TLS → LAN:3090 | 局域网语音前门（https），证书 `~/.config/dsh-web-tls/`（10 年）；**已挂 launchd `cn.weiekko.dsh-web-tls-forward`**（2026-11-13） |
+| `scripts/web-lan-gate.js`（`GATE_TLS_CERT/KEY` 模式） | 0.0.0.0:3092 自签 TLS → LAN:3090 | 局域网语音前门（https），证书 `~/.config/dsh-web-tls/`（10 年）；**已挂 launchd `cn.weiekko.dsh-web-lan-gate-tls`**（2026-11-15，取代 `tls-forward.py`，后者退役保留不跑） |
 
-**欠账已清（2026-11-13）**：两个转发器曾一直跑临时进程，Mac 重启后全灭——安卓「语音老是接不着」实为 3092 拒连。已双双挂 launchd（RunAtLoad+KeepAlive，plist 在 ~/Library/LaunchAgents/，日志 ~/.dsh/logs/dsh-web-{tls,loopback}-forward.*.log），杀进程自愈、扛重启。安卓语音入口 = `https://10.14.14.117:3092`（自签证书点一次「继续访问」；cookie 按 host 共享，3090 激活的会话在 3092 直接生效）。
+**入口矩阵（2026-11-15 定版）**
+
+| 入口 | 地址 | 用途 | 登录 |
+|---|---|---|---|
+| 本机 | `http://127.0.0.1:3090` | Mac 上浏览器 | 用启动日志里的 `?token=` |
+| 局域网 HTTP | `http://10.14.14.117:3093/` | 任何局域网设备（手机/平板/别的电脑） | **自动**，门卫 302 补当前 token |
+| 局域网 HTTPS | `https://10.14.14.117:3092/` | 安卓/手机开语音（getUserMedia 要 secure context） | **自动**（同上），自签证书点一次「继续访问」 |
+| 本机 loopback | `http://127.0.0.1:3091/` | 本机语音（secure context 认定 loopback 可信） | 同 :3090 |
+
+关键：dsh 的登录 cookie 里钉了 authority（签发时的 `Host`）。`tls-forward.py` 当年是裸 TCP 转发、不改 Host，
+所以 3090 拿到的 cookie 在 3092 一律 401 ——「cookie 按 host 共享所以 3092 直接生效」这句是错的。
+现在 3092 也由 `web-lan-gate.js` 接管，转发时把 `Host/Origin/Referer` 改写成 `10.14.14.117:3090`，
+两个入口签发/校验的是同一个 authority：**在哪登都一样，且重启不失效（签名密钥持久 30 天）**。
 
 ---
 
