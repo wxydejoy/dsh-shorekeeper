@@ -1,7 +1,8 @@
 # 守岸人项目 · 长期备忘（精简版；完整历史见 ARCHIVE-memory-full-2026-11-15.md 与 2026-11-*.md 日志）
 
 ## 拓扑
-- Mac 本机 10.14.14.117：hub :17890（launchd `cn.weiekko.dock-hub`，配置 ~/.config/dock-hub/hub.yaml，改完 kickstart）；dsh web :3090（launchd `cn.weiekko.dsh-web`，profile web，patch ~/.dsh/profiles/web/cordis.patch.yml）；LAN 门卫 :3093（scripts/web-lan-gate.js，自动补 token）；:3091 回环转发、:3092 TLS 转发（安卓语音 secure context 用 https://10.14.14.117:3092），四者都挂 launchd 常驻。
+- Mac 本机 10.14.14.117：hub :17890（launchd `cn.weiekko.dock-hub`，配置 ~/.config/dock-hub/hub.yaml，改完 kickstart）；dsh web :3090（launchd `cn.weiekko.dsh-web`，profile web，patch ~/.dsh/profiles/web/cordis.patch.yml）；**:3093 HTTP 门卫 + :3092 HTTPS 门卫（同一脚本 scripts/web-lan-gate.js，后者 GATE_TLS_CERT/KEY 起 TLS），都自动补 token + 改写 Host/Origin/Referer（lan-gate2 / lan-gate-tls）**；:3091 回环转发。局域网设备永远用 `http://10.14.14.117:3093/`，手机开语音用 `https://10.14.14.117:3092/`，都不用带 token。
+- dsh 登录 cookie 钉了 authority（签发时 Host:Port）→ 转发器不改 Host 就 401；python tls-forward.py 已退役。
 - k20 屏：10.14.14.177，adb 5555，背景面 :17920，应用 `cn.weiekko.dock`（配置在 app datastore，su 可读）。
 - Windows wrobot：10.14.14.170，`ssh weiek@10.14.14.170`（管理员，PowerShell 5.1）。远程 PS 必须 base64 `-EncodedCommand`（本地 /tmp/winps.sh）。schtasks/wmic/reg 被拦用 cmdlet。探针在 D:\Users\weiek\Documents\Github\dock\hub，靠计划任务 HelmDockHub 活（SSH 手动起的随会话死）。
 - token 抓法：`grep -o "token=[A-Za-z0-9_-]*" ~/.dsh/logs/dsh-web.out.log | tail -1`；种 cookie：`curl -c jar "http://10.14.14.117:3090/?token=…"`。console API：POST :3090/api/dsh-console/cmd（op: create/send/detail/sessions/cancel/selectModel/delete；send 支持 busyMode:'steer'）。
