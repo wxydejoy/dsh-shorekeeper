@@ -29,7 +29,12 @@ function describeBook(book: Book): string {
 function listenSummary(status: ListenStatus | null, prefix: string): string {
   if (!status) return `${prefix}当前没有听书任务。`
   const at = status.totalChunks > 0 ? `（第 ${status.chunkIndex + 1}/${status.totalChunks} 段）` : ''
-  return `${prefix}《${status.title}》${at}`
+  // 倒计时：守岸人问「还有多久」时，答案从这里来（remainingSec 由引擎按 deadline 现算）
+  const left =
+    status.playing && status.remainingSec !== null
+      ? `，定时还剩 ${Math.floor(status.remainingSec / 60)} 分 ${status.remainingSec % 60} 秒`
+      : ''
+  return `${prefix}《${status.title}》${at}${left}`
 }
 
 /** 听书起播共用：开引擎 → 组装回复。想读状态联动在读。 */

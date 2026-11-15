@@ -36,6 +36,8 @@ export interface ListenStatus {
   offset: number
   /** 这一轮用的定时（分钟）。0 = 不限。和 listen-state 里持久的 timer_min 不是一回事。 */
   sessionTimerMin: number
+  /** 这一轮定时还剩多少秒。不限时 / 已收尾 = null。面板拿它做倒计时。 */
+  remainingSec: number | null
   stoppedBy: StoppedBy | null
   error: string | null
 }
@@ -173,7 +175,7 @@ export class ListenEngine {
   /** 当前播放快照（工具查询用） */
   get status(): ListenStatus | null {
     if (!this.current) return this.result
-    const { book, textLength, spoken } = this.current
+    const { book, textLength, spoken, deadline } = this.current
     const offset = this.state.getOffset(book)
     const totalChunks = Math.max(1, Math.ceil(textLength / PACK_TARGET))
     return {
@@ -184,6 +186,7 @@ export class ListenEngine {
       totalChunks,
       offset,
       sessionTimerMin: this.current.timerMin,
+      remainingSec: deadline === null ? null : Math.max(0, Math.ceil((deadline - Date.now()) / 1000)),
       stoppedBy: null,
       error: null,
     }
@@ -229,6 +232,7 @@ export class ListenEngine {
           totalChunks: Math.max(1, Math.ceil(text.length / PACK_TARGET)),
           offset: this.state.getOffset(book),
           sessionTimerMin: timerMin,
+          remainingSec: null,
           stoppedBy: 'error',
           error: error instanceof Error ? error.message : String(error),
         })
@@ -328,6 +332,7 @@ export class ListenEngine {
       totalChunks,
       offset: this.state.getOffset(book),
       sessionTimerMin: timerMin,
+      remainingSec: null,
       stoppedBy,
       error: errorMessage,
     })

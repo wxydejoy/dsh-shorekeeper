@@ -261,13 +261,27 @@ describe('/reading-panel RPC', () => {
     const omitted = await again('play', { bookId: 'b-3' })
     expect(omitted.ok).toBe(true)
     expect((omitted.value as { status: { sessionTimerMin: number } }).status.sessionTimerMin).toBe(30)
+    // 倒计时锚点：面板拿 remainingSec 自己按秒走，服务端只在轮询时校准
+    const omittedLeft = (omitted.value as { status: { remainingSec: number | null } }).status.remainingSec
+    expect(omittedLeft).toBeTypeOf('number')
+    expect(omittedLeft as number).toBeGreaterThan(29 * 60)
+    expect(omittedLeft as number).toBeLessThanOrEqual(30 * 60)
     expect(JSON.parse(readFileSync(join(dataDir, 'listen-state.json'), 'utf-8')).timer_min).toBe(2)
     await again('stop')
 
     const timed = await again('play', { bookId: 'b-3', timerMin: 5 })
     expect(timed.ok).toBe(true)
     expect((timed.value as { status: { sessionTimerMin: number } }).status.sessionTimerMin).toBe(5)
+    const timedLeft = (timed.value as { status: { remainingSec: number | null } }).status.remainingSec as number
+    expect(timedLeft).toBeGreaterThan(4 * 60)
+    expect(timedLeft).toBeLessThanOrEqual(5 * 60)
     expect(JSON.parse(readFileSync(join(dataDir, 'listen-state.json'), 'utf-8')).timer_min).toBe(2)
     await again('stop')
-  }, 15_000)
+
+    // 不限时（0）→ 没有倒计时可算
+    const unlimited = await again('play', { bookId: 'b-3', timerMin: 0 })
+    expect(unlimited.ok).toBe(true)
+    expect((unlimited.value as { status: { remainingSec: number | null } }).status.remainingSec).toBeNull()
+    await again('stop')
+  }, 20_000)
 })

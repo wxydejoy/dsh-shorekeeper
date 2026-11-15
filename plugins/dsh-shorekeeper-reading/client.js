@@ -46,6 +46,10 @@ window.__ModuleLoader__.load({
       timerHint: ['默认读 30 分钟，只对这一次有效', 'Reads for 30 minutes by default; this play only'],
       volume: ['朗读音量', 'Reading volume'],
       muted: ['静音', 'Mute'],
+      timerLeft: ['定时剩余 %s', 'Timer left %s'],
+      timerRunning: ['本轮 %d 分钟', 'This run: %d min'],
+      timerUnlimited: ['本轮不限时', 'No limit this run'],
+      volumeUnknown: ['—', '—'],
       importPick: ['选 txt 文件导入', 'Pick a txt file'],
       importing: ['导入中…', 'Importing…'],
       importHint: ['支持 UTF-8 / GBK，上限 15MB；导入后出现在书架', 'UTF-8 / GBK, up to 15MB'],
@@ -99,6 +103,10 @@ window.__ModuleLoader__.load({
 .dsh-reading-select{border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);border-radius:6px;padding:4px 6px;font-size:12px;max-width:100%}
 .dsh-reading-input{width:76px;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);border-radius:6px;padding:4px 8px;font-size:12px}
 .dsh-reading-range{flex:1;accent-color:var(--dsw-alias-brand-primary)}
+.dsh-reading-value{flex:none;min-width:44px;text-align:right;font-size:12px;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-primary)}
+.dsh-reading-value-muted{color:var(--dsw-alias-label-secondary)}
+.dsh-reading-countdown{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
+.dsh-reading-countdown b{font-size:14px;font-weight:600;color:var(--dsw-alias-label-primary);font-variant-numeric:tabular-nums}
 .dsh-reading-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:middle}
 .dsh-reading-msg{color:var(--dsw-alias-label-secondary);font-size:12px;margin-left:8px}
 .dsh-reading-progress{height:4px;border-radius:2px;background:var(--dsw-alias-border-l1);overflow:hidden;margin:8px 0 2px}
@@ -110,6 +118,16 @@ window.__ModuleLoader__.load({
     // ----------------------------------------------------------- helpers --
 
     const SPEEDS = [0.75, 1.0, 1.25, 1.5, 2.0]
+
+    /** 秒 → 12:34 / 1:02:03。倒计时显示用。 */
+    function clockText(totalSeconds) {
+      const s = Math.max(0, Math.floor(totalSeconds))
+      const pad = (n) => (n < 10 ? '0' + n : String(n))
+      const hour = Math.floor(s / 3600)
+      const minute = Math.floor((s % 3600) / 60)
+      if (hour > 0) return hour + ':' + pad(minute) + ':' + pad(s % 60)
+      return pad(minute) + ':' + pad(s % 60)
+    }
 
     function statusLine(snap) {
       const st = snap && snap.status
@@ -226,6 +244,7 @@ window.__ModuleLoader__.load({
       const [importing, setImporting] = useState(false)
       const [volumeState, setVolumeState] = useState(null)
       const [volumeDraft, setVolumeDraft] = useState(null)
+      const [remaining, setRemaining] = useState(null)
       const aliveRef = useRef(true)
       const fileRef = useRef(null)
 
@@ -255,6 +274,21 @@ window.__ModuleLoader__.load({
           clearInterval(timer)
         }
       }, [load, call])
+
+      // 倒计时锚点：服务端 3s 才推一次 remainingSec，这里拿它当锚点，本地按秒往下走
+      useEffect(() => {
+        const st = snap && snap.status
+        setRemaining(st && st.playing && typeof st.remainingSec === 'number' ? st.remainingSec : null)
+      }, [snap])
+
+      const counting = remaining !== null
+      useEffect(() => {
+        if (!counting) return undefined
+        const id = setInterval(() => {
+          setRemaining((prev) => (prev === null ? null : Math.max(0, prev - 1)))
+        }, 1000)
+        return () => clearInterval(id)
+      }, [counting])
 
       const run = useCallback(
         async (action, payload) => {
@@ -368,6 +402,9 @@ window.__ModuleLoader__.load({
       const resume = snap.resume
       const timerValue = timerDraft != null ? timerDraft : '30'
       const volume = volumeDraft != null ? volumeDraft : volumeState ? volumeState.volume : 50
+      const volumeMuted = !!(volumeState && volumeState.muted)
+      const sessionTimerMin =
+        snap.status && typeof snap.status.sessionTimerMin === 'number' ? snap.status.sessionTimerMin : null
       const books = Array.isArray(snap.books) ? snap.books : []
 
       return h(
@@ -413,6 +450,16 @@ window.__ModuleLoader__.load({
                   )
                 : null,
           ),
+          playing
+            ? h(
+                'div',
+                { className: 'dsh-reading-countdown' },
+                h('b', null, remaining !== null ? fmt('timerLeft', clockText(remaining)) : tr('timerUnlimited')),
+                sessionTimerMin !== null && sessionTimerMin > 0
+                  ? h('span', null, fmt('timerRunning', sessionTimerMin))
+                  : null,
+              )
+            : null,
           progress !== null
             ? h('div', { className: 'dsh-reading-progress' }, h('div', { style: { width: progress + '%' } }))
             : null,
@@ -530,7 +577,17 @@ window.__ModuleLoader__.load({
               'div',
               { className: 'dsh-reading-label' },
               h('div', { className: 'dsh-reading-name' }, tr('timer')),
-              h('div', { className: 'dsh-reading-hint' }, tr('timerHint')),
+              h(
+                'div',
+                { className: 'dsh-reading-hint' },
+                playing && sessionTimerMin !== null
+                  ? (sessionTimerMin > 0
+                      ? fmt('timerRunning', sessionTimerMin) +
+                        ' · ' +
+                        (remaining !== null ? fmt('timerLeft', clockText(remaining)) : '')
+                      : tr('timerUnlimited'))
+                  : tr('timerHint'),
+              ),
             ),
             h('input', {
               className: 'dsh-reading-input',
@@ -546,8 +603,13 @@ window.__ModuleLoader__.load({
             { className: 'dsh-reading-row' },
             h(
               'div',
-              { className: 'dsh-reading-label' },
-              h('div', { className: 'dsh-reading-name' }, tr('volume') + '：' + volume),
+              { className: 'dsh-reading-label', style: { flex: '0 0 auto' } },
+              h('div', { className: 'dsh-reading-name' }, tr('volume')),
+            ),
+            h(
+              'span',
+              { className: 'dsh-reading-value' + (volumeMuted ? ' dsh-reading-value-muted' : '') },
+              !volumeState ? '—' : volumeMuted ? '静音' : volume + '%',
             ),
             h('input', {
               className: 'dsh-reading-range',
@@ -555,6 +617,7 @@ window.__ModuleLoader__.load({
               min: 0,
               max: 100,
               value: volume,
+              'aria-label': tr('volume'),
               onChange: (e) => setVolumeDraft(Number(e.target.value)),
               onPointerUp: (e) => void applyVolume(Number(e.target.value)),
               onKeyUp: (e) => void applyVolume(Number(e.target.value)),
@@ -562,7 +625,7 @@ window.__ModuleLoader__.load({
             h(
               'button',
               { className: 'dsh-reading-btn', onClick: () => void toggleMuted() },
-              (volumeState && volumeState.muted ? '取消静音' : tr('muted')),
+              volumeMuted ? '取消静音' : tr('muted'),
             ),
           ),
           h(
