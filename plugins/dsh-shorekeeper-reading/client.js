@@ -107,35 +107,6 @@ window.__ModuleLoader__.load({
 .dsh-reading-file{font-size:12px;color:var(--dsw-alias-label-secondary)}
 `
 
-    // -------------------------------------------------------- panel icon --
-
-    function PanelIcon({ size, active }) {
-      const s = size || 18
-      return h(
-        'svg',
-        {
-          width: s,
-          height: s,
-          viewBox: '0 0 24 24',
-          fill: 'none',
-          'aria-hidden': true,
-          style: { display: 'block', color: active ? 'var(--dsw-alias-brand-primary)' : 'currentColor' },
-        },
-        h('path', {
-          d: 'M4 5.5C4 4.7 4.7 4 5.5 4H10c1.1 0 2 .9 2 2v13c0-1.1-.9-2-2-2H5.5C4.7 17 4 16.3 4 15.5v-10z',
-          stroke: 'currentColor',
-          strokeWidth: 1.8,
-          strokeLinejoin: 'round',
-        }),
-        h('path', {
-          d: 'M20 5.5c0-.8-.7-1.5-1.5-1.5H14c-1.1 0-2 .9-2 2v13c0-1.1.9-2 2-2h4.5c.8 0 1.5-.7 1.5-1.5v-10z',
-          stroke: 'currentColor',
-          strokeWidth: 1.8,
-          strokeLinejoin: 'round',
-        }),
-      )
-    }
-
     // ----------------------------------------------------------- helpers --
 
     const SPEEDS = [0.75, 1.0, 1.25, 1.5, 2.0]
@@ -642,23 +613,15 @@ window.__ModuleLoader__.load({
         return res.value
       }
 
-      ctx.slots.inject('sidebar.panellist', () =>
+      // 侧栏不再单独占一行：并进「守岸人」壳的标签栏（keeper.tabs），
+      // 壳由 dsh-keeper-console 提供。
+      ctx.slots.inject('keeper.tabs', () =>
         ctx.slots.register(
           {
-            name: 'sidebar.panellist',
+            name: 'keeper.tabs',
             id: 'shorekeeper-reading',
-            order: 43,
-            label: () => tr('panelName'),
-          },
-          PanelIcon,
-        ),
-      )
-
-      ctx.slots.inject('main', () =>
-        ctx.slots.register(
-          {
-            name: 'main',
-            key: 'shorekeeper-reading',
+            order: 30,
+            label: tr('panelName'),
             inject: () => ({ call }),
           },
           ReadingPanel,

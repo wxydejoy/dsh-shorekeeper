@@ -24,7 +24,7 @@
 
 | 目录                       | 说明                                                                                                                |
 | ------------------------ | ----------------------------------------------------------------------------------------------------------------- |
-| [plugins/](plugins/)     | 自写插件：`dsh-shorekeeper-k20`（安卓屏驱动+k20 直链网关）、`dsh-keeper-voice`（克隆音色工具面）、`dsh-shorekeeper-reading`（阅读）、`dsh-shorekeeper-desk-mi`（时钟+米家薄工具层）、`dsh-keeper-watch`（异动提醒）、`dsh-keeper-agenda`（ICS 日程）、`dsh-keeper-console`（设置面板）。微信入口是生态件 dsh-plugin-weixin |
+| [plugins/](plugins/)     | 自写插件：`dsh-shorekeeper-k20`（安卓屏驱动+k20 直链网关）、`dsh-keeper-voice`（克隆音色工具面）、`dsh-shorekeeper-reading`（阅读）、`dsh-shorekeeper-desk-mi`（时钟+米家薄工具层）、`dsh-keeper-watch`（异动提醒）、`dsh-keeper-agenda`（ICS 日程）、`dsh-keeper-console`（**侧栏唯一入口「守岸人」**：标签栏壳 + 设置页）。微信入口是生态件 dsh-plugin-weixin |
 | [content/](content/)     | 守岸人角色卡 + 世界书 + 预设（内容工程，宿主是 dsh-tavern）                                                                            |
 | [profile/](profile/)     | 生态插件安装清单 + cordis.patch.yml + 一键安装脚本                                                                              |
 | [migration/](migration/) | 岸亭 diary/weekly/books 数据导出导入脚本（一次性）                                                                               |

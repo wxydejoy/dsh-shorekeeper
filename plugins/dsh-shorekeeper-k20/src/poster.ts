@@ -19,6 +19,9 @@ import type { BackgroundClient } from './background-client.ts'
 import type { BackgroundItem } from './types.ts'
 
 const POSTER_WIDTH = 320
+/** 允许的最宽/最窄（面板列表 320，布局预览板 960） */
+const MIN_WIDTH = 160
+const MAX_WIDTH = 1600
 const POSTER_QUALITY = 6
 const MAX_SOURCE_BYTES = 220 * 1024 * 1024
 const FRAME_TIMEOUT_MS = 25_000
@@ -32,8 +35,8 @@ export interface PosterStoreOptions {
 }
 
 export interface PosterStore {
-  /** 返回缓存里的 JPEG 绝对路径；同一背景并发只抽一次 */
-  get(item: BackgroundItem): Promise<string>
+  /** 返回缓存里的 JPEG 绝对路径；同一背景并发只抽一次。width 缺省 320 */
+  get(item: BackgroundItem, width?: number): Promise<string>
 }
 
 export function posterDir(home = process.env.DSH_HOME || join(homedir(), '.dsh')): string {
@@ -45,13 +48,14 @@ export function createPosterStore(options: PosterStoreOptions): PosterStore {
   const pending = new Map<string, Promise<string>>()
 
   return {
-    async get(item) {
-      const key = cacheKey(item)
+    async get(item, requested) {
+      const width = clampWidth(requested)
+      const key = cacheKey(item, width)
       const file = join(dir, `${key}.jpg`)
       if (existsSync(file)) return file
       const running = pending.get(key)
       if (running !== undefined) return running
-      const job = generate(options, item, dir, file)
+      const job = generate(options, item, dir, file, width)
         .finally(() => pending.delete(key))
       pending.set(key, job)
       return job
@@ -59,8 +63,14 @@ export function createPosterStore(options: PosterStoreOptions): PosterStore {
   }
 }
 
-function cacheKey(item: BackgroundItem): string {
-  const stamp = `${item.id}|${item.bytes ?? 0}|${item.modified ?? 0}`
+function clampWidth(requested?: number): number {
+  const n = Number(requested)
+  if (!Number.isFinite(n) || n <= 0) return POSTER_WIDTH
+  return Math.min(Math.max(Math.round(n), MIN_WIDTH), MAX_WIDTH)
+}
+
+function cacheKey(item: BackgroundItem, width: number): string {
+  const stamp = `${item.id}|${item.bytes ?? 0}|${item.modified ?? 0}|${width}`
   return createHash('sha1').update(stamp).digest('hex').slice(0, 16)
 }
 
@@ -69,11 +79,12 @@ async function generate(
   item: BackgroundItem,
   dir: string,
   file: string,
+  width: number,
 ): Promise<string> {
   mkdirSync(dir, { recursive: true })
   const jpeg = item.kind === 'video'
-    ? await frameFromFile(options, item)
-    : await frameFromStream(options, item)
+    ? await frameFromFile(options, item, width)
+    : await frameFromStream(options, item, width)
   if (jpeg === null) throw new Error('ffmpeg 没出帧')
   writeFileSync(file, jpeg)
   prune(dir, options.log)
@@ -81,12 +92,12 @@ async function generate(
 }
 
 /** 图片：直接喂管道，20MB 以内不落地 */
-async function frameFromStream(options: PosterStoreOptions, item: BackgroundItem): Promise<Buffer | null> {
+async function frameFromStream(options: PosterStoreOptions, item: BackgroundItem, width: number): Promise<Buffer | null> {
   const response = await options.background.mediaResponse(item.id)
   if (response.body === null) throw new Error('媒体流为空')
   const source = Readable.fromWeb(response.body as import('node:stream/web').ReadableStream<Uint8Array>)
   try {
-    return await frame(options, source, 0)
+    return await frame(options, source, 0, undefined, width)
   } finally {
     source.destroy()
     void response.body.cancel().catch(() => undefined)
@@ -94,7 +105,7 @@ async function frameFromStream(options: PosterStoreOptions, item: BackgroundItem
 }
 
 /** 视频：先落临时文件。mp4 的 moov 常在最尾部，管道不可 seek 时 ffmpeg 会读到底再报没帧 */
-async function frameFromFile(options: PosterStoreOptions, item: BackgroundItem): Promise<Buffer | null> {
+async function frameFromFile(options: PosterStoreOptions, item: BackgroundItem, width: number): Promise<Buffer | null> {
   const response = await options.background.mediaResponse(item.id)
   if (response.body === null) throw new Error('媒体流为空')
   const responseBody = response.body
@@ -111,7 +122,7 @@ async function frameFromFile(options: PosterStoreOptions, item: BackgroundItem):
     await new Promise<void>((resolve, reject) => {
       sink.end((error?: Error | null) => (error ? reject(error) : resolve()))
     })
-    return await frame(options, null, 1.5, tmp)
+    return await frame(options, null, 1.5, tmp, width)
   } finally {
     void responseBody.cancel().catch(() => undefined)
     rmSync(tmp, { force: true })
@@ -119,14 +130,20 @@ async function frameFromFile(options: PosterStoreOptions, item: BackgroundItem):
 }
 
 /** 抽一帧成 JPEG；抽不到返回 null（不抛，让上层决定要不要退第 0 帧） */
-function frame(options: PosterStoreOptions, source: Readable | null, atSec: number, seekFile?: string): Promise<Buffer | null> {
+function frame(
+  options: PosterStoreOptions,
+  source: Readable | null,
+  atSec: number,
+  seekFile: string | undefined,
+  width: number,
+): Promise<Buffer | null> {
   return new Promise((resolve, reject) => {
     const args = [
       '-hide_banner', '-loglevel', 'error',
       // 文件输入时 -ss 放在 -i 前（快进到关键帧）；管道只能放后面
       ...(seekFile !== undefined ? ['-ss', String(atSec), '-i', seekFile] : ['-i', 'pipe:0', '-ss', String(atSec)]),
       '-frames:v', '1',
-      '-vf', `scale=${POSTER_WIDTH}:-2`,
+      '-vf', `scale=${width}:-2`,
       '-q:v', String(POSTER_QUALITY),
       '-f', 'mjpeg',
       'pipe:1',

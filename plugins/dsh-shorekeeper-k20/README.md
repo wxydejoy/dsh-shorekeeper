@@ -39,17 +39,42 @@ k20 安卓横屏摆件的 DSH 驱动插件：把这块屏变成守岸人的「�
 - 已知 TODO（T1 真机校准）：设置卡片接线（rc.5 SDK 未暴露 `installSection`）、高危工具的 host 审批接线（暂以 `lockEnabled` 配置闸门兜底）、watcher 随 fiber 卸载（SDK Events 无 dispose 事件）
 - `npm run typecheck` 零错误；`npm test` 38/38（mock Hub + mock BackgroundServer + mock webServer）
 
-## 侧栏面板「主屏布局」（含背景壁纸）
+## 侧栏「主屏布局」标签（含背景壁纸）
 
-`client.js` 在侧栏注册 `k20-layout` 面板（`sidebar.panellist` + `main`），上半部是槽位拖拽，
-下半部是「背景壁纸」——上传、切换、删除、恢复纯色。
+2026-11-15 起侧栏不再单独占一行：`client.js` 往 `keeper.tabs`（由 dsh-keeper-console
+声明）注册 `k20-layout`（order 20），入口是侧栏「守岸人」→「主屏布局」。
+上半部槽位拖拽，下半部「背景壁纸」——上传、切换、删除、恢复纯色。
+
+预览板会把**当前壁纸的海报图铺满**（`?w=960` 那张，cover），磁贴半透明压在上面，
+一眼就能看出磁贴压在脸的哪个位置；右上角「壁纸预览」可临时关掉看纯色效果。
 
 | 走向 | 通道 | 说明 |
 |---|---|---|
-| 元数据（snapshot / save / backgrounds / select / remove / clear） | `POST /k20-layout/<action>`（connection rpc 信封） | `src/index.ts` 的 `registerLayoutPanel` 直挂宿主 webServer，不经过 connection.rpc 的 fiber |
-| 缩略图 | `GET /k20-bg/poster/<id>` | ffmpeg 抽一帧缩到 320 宽，缓存到 `~/.dsh/k20-bg-posters/`，键含 bytes+modified |
+| 元数据（snapshot / save / backgrounds / limits / select / remove / clear） | `POST /k20-layout/<action>`（connection rpc 信封） | `src/index.ts` 的 `registerLayoutPanel` 直挂宿主 webServer，不经过 connection.rpc 的 fiber |
+| 缩略图 | `GET /k20-bg/poster/<id>?w=320\|960` | ffmpeg 抽一帧缩到指定宽（默认 320，夹 160–1600），缓存到 `~/.dsh/k20-bg-posters/`，键含 bytes+modified+width |
 | 视频预览、原图 | `GET /k20-bg/media/<id>` | 插件代持手机 cookie 转发 `:17920/api/backgrounds/<id>/media`，浏览器不直连手机 |
-| 上传 | `POST /k20-bg/upload?name=&realname=`（body 为文件原字节） | 边收边转，200MB 视频不进内存做 base64 |
+| 上传 | `POST /k20-bg/upload?name=&realname=[&kind=image\|video]`（body 为文件原字节） | 边收边转，200MB 视频不进内存做 base64 |
+| 上传上限 | `GET /k20-bg/limits` | 面板先拿这张表做前端预检；curl 也能查 |
+
+### 上传闸门（2026-11-15）
+
+手机端 BackgroundServer 既不限大小也不验格式（43MB 视频照收），所以闸门在插件里，
+转发到手机之前就拦（`src/upload-guard.ts`）：
+
+| 关卡 | 规则 | 回 |
+|---|---|---|
+| 扩展名 | `jpg/jpeg/png/webp`（图）· `mp4/webm`（视频）；没后缀可加 `?kind=` | 415 |
+| 大小 | 图 ≤`backgroundImageMaxMB`(20) · 视频 ≤`backgroundVideoMaxMB`(200) | 413（按 Content-Length 先拒，chunked 边转边数） |
+| 魔数 | 前 12 字节认 JPEG/PNG/WebP/MP4/WebM，与后缀不符也拒 | 415 |
+| 空体 | 没有字节 | 400 |
+
+顺序是 `peekHead`（只读 12 字节）→ `assertContent` → 才开始连手机，内容不对不会在手机
+那头留个 0 字节背景。curl 直传：
+
+```sh
+curl --data-binary @海边.jpg \
+  'http://10.14.14.117:3090/k20-bg/upload?name=海边.jpg&realname=守岸人'
+```
 
 三个坑（2026-11-15 实测）：
 

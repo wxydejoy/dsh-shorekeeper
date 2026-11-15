@@ -27,6 +27,10 @@ export interface K20Config {
   ttsBaseUrl?: string
   /** keeper-tts Bearer 口令（本机回环可留空） */
   ttsToken?: string
+  /** 壁纸图片上限（MB）；转发到手机之前就拦 */
+  backgroundImageMaxMB?: number
+  /** 壁纸视频上限（MB） */
+  backgroundVideoMaxMB?: number
 }
 
 export const Config = Schema.object({
@@ -42,6 +46,8 @@ export const Config = Schema.object({
   companionUpstream: Schema.string().description('chat/memory/audio 的上游；留空则这些路由 404，不再转发到旧 hub').default(''),
   ttsBaseUrl: Schema.string().description('keeper-tts 服务地址（announce/stop 语音直连）；置空则只回执不出声').default('http://127.0.0.1:18100'),
   ttsToken: Schema.string().description('keeper-tts Bearer 口令（本机回环可留空）').default(''),
+  backgroundImageMaxMB: Schema.number().min(1).max(4096).description('壁纸图片上传上限（MB）').default(20),
+  backgroundVideoMaxMB: Schema.number().min(1).max(4096).description('壁纸视频上传上限（MB）').default(200),
 })
 
 export function hubBaseUrl(config: K20Config): string {

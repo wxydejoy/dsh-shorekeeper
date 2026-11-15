@@ -23,6 +23,11 @@ window.__ModuleLoader__.load({
 .k20-layout-msg{color:var(--dsw-alias-label-secondary);font-size:12px;margin-bottom:10px}
 .k20-layout-msg.err{color:var(--dsw-alias-danger, #e35d6a)}
 .k20-layout-board{position:relative;margin:0 auto;width:100%;max-width:920px;overflow:hidden;border:1px solid var(--dsw-alias-border-l1);border-radius:12px;background:var(--dsw-alias-bg-layer-1);user-select:none;touch-action:none}
+.k20-layout-board.with-bg{background-color:#0b1016;background-size:cover;background-position:center;background-repeat:no-repeat}
+.k20-layout-board.with-bg .k20-layout-tile{background:color-mix(in srgb, var(--dsw-alias-bg-base) 46%, transparent);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);border-color:rgba(255,255,255,.35);color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.5)}
+.k20-layout-board.with-bg .k20-layout-tile.hidden{background:rgba(0,0,0,.18);border-color:rgba(255,255,255,.6);color:#fff}
+.k20-bg-hint{color:var(--dsw-alias-label-secondary);font-size:11px;margin-top:6px}
+.k20-bg-code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--dsw-alias-label-secondary);word-break:break-all}
 .k20-layout-tile{position:absolute;display:flex;align-items:center;justify-content:center;overflow:hidden;border-radius:8px;border:1px solid var(--dsw-alias-border-l2);background:color-mix(in srgb, var(--dsw-alias-bg-base) 82%, transparent);font-size:12px;cursor:move}
 .k20-layout-tile.hidden{border-style:dashed;background:transparent;color:var(--dsw-alias-label-secondary)}
 .k20-layout-tile.active{outline:2px solid var(--dsw-alias-brand-primary);z-index:2}
@@ -129,6 +134,8 @@ window.__ModuleLoader__.load({
       const [bgMsg, setBgMsg] = useState('')
       const [bgErr, setBgErr] = useState(null)
       const [realName, setRealName] = useState('守岸人')
+      const [limits, setLimits] = useState(null)
+      const [showBg, setShowBg] = useState(true)
       const fileRef = useRef(null)
 
       const load = useCallback(async () => {
@@ -179,6 +186,20 @@ window.__ModuleLoader__.load({
 
       useEffect(() => { void loadBackgrounds() }, [loadBackgrounds])
 
+      // 上限以宿主为准（config 可改），面板只负责先说清楚、先拦一道。
+      useEffect(() => {
+        let alive = true
+        void (async () => {
+          try {
+            const value = await call('limits')
+            if (alive) setLimits(value)
+          } catch {
+            // 拿不到上限就不预检，最终仍由服务端闸门把关
+          }
+        })()
+        return () => { alive = false }
+      }, [call])
+
       const bgAction = async (action, payload, note) => {
         setBgBusy(true)
         setBgErr(null)
@@ -193,11 +214,36 @@ window.__ModuleLoader__.load({
         }
       }
 
+      // 与服务端 upload-guard 同一套规则：后缀决定 kind，超了就本地先拒，
+      // 不用白传一遍再等手机那头的 413。
+      const SIZES = { image: (limits && limits.imageMB) || 20, video: (limits && limits.videoMB) || 200 }
+      const kindOf = (name) => {
+        const ext = (/\.([A-Za-z0-9]+)$/.exec(name || '') || [])[1]
+        if (!ext) return null
+        const lower = ext.toLowerCase()
+        const imageExts = (limits && limits.imageExts) || ['jpg', 'jpeg', 'png', 'webp']
+        const videoExts = (limits && limits.videoExts) || ['mp4', 'webm']
+        if (imageExts.indexOf(lower) >= 0) return 'image'
+        if (videoExts.indexOf(lower) >= 0) return 'video'
+        return null
+      }
+      const limitHint = (limits && limits.hint) || `图片 JPG/JPEG/PNG/WEBP ≤${SIZES.image}MB；视频 MP4/WEBM ≤${SIZES.video}MB`
+
       const uploadBackground = async (file) => {
         if (!file) return
         const who = realName.trim()
         if (who.length < 2) {
           setBgErr('先填署名：2 到 20 个字，不能带数字（手机端会核验）')
+          return
+        }
+        const kind = kindOf(file.name)
+        if (kind === null) {
+          setBgErr(`这个格式不收：${file.name}。${limitHint}`)
+          return
+        }
+        const maxBytes = SIZES[kind] * 1024 * 1024
+        if (file.size > maxBytes) {
+          setBgErr(`${file.name} 有 ${sizeText(file.size)}，超过 ${kind === 'video' ? '视频' : '图片'}上限 ${SIZES[kind]}MB`)
           return
         }
         setBgBusy(true)
@@ -317,6 +363,11 @@ window.__ModuleLoader__.load({
       }
       const bgItems = (bg && Array.isArray(bg.items)) ? bg.items : []
       const bgCurrent = (bg && bg.current) || null
+      // 布局预览板铺当前壁纸：海报图 960 宽够铺满 920 的板子，
+      // 视频也只是这一张抽帧，不会拉整段。
+      const boardPoster = bgCurrent && showBg
+        ? `/k20-bg/poster/${encodeURIComponent(bgCurrent)}?w=960`
+        : ''
       const mediaUrl = (id) => `/k20-bg/media/${encodeURIComponent(id)}`
       const sizeText = (bytes) => {
         const n = Number(bytes)
@@ -354,7 +405,7 @@ window.__ModuleLoader__.load({
           h('input', {
             ref: fileRef,
             type: 'file',
-            accept: 'image/jpeg,image/png,image/webp,video/mp4',
+            accept: 'image/jpeg,image/png,image/webp,video/mp4,video/webm',
             style: { display: 'none' },
             onChange: (event) => void uploadBackground(event.target.files && event.target.files[0]),
           }),
@@ -363,6 +414,12 @@ window.__ModuleLoader__.load({
             disabled: bgBusy || !bgCurrent,
             onClick: () => void bgAction('clear', {}, '背景已恢复纯色'),
           }, '恢复纯色'),
+        ),
+        h('div', { className: 'k20-bg-hint' }, `收 ${limitHint}。上传后手机立刻换成这张。`),
+        h('div', { className: 'k20-bg-hint' },
+          '接口：POST ',
+          h('span', { className: 'k20-bg-code' }, '/k20-bg/upload?name=<文件名>&realname=<署名>'),
+          ' body 放文件原字节（curl --data-binary @文件）。',
         ),
         bgMsg ? h('div', { className: 'k20-layout-msg' }, bgMsg) : null,
         bgErr ? h('div', { className: 'k20-layout-msg err' }, bgErr) : null,
@@ -429,6 +486,13 @@ window.__ModuleLoader__.load({
             onClick: () => { setDraft({ ...defaults }); setSelected(null) },
           }, '恢复默认'),
           h('button', { className: 'k20-layout-btn primary', disabled: busy || !snap, onClick: () => void save() }, '保存'),
+          bgCurrent
+            ? h('button', {
+                className: `k20-layout-btn${showBg ? ' primary' : ''}`,
+                title: '把当前壁纸的海报图铺在预览板下面，看磁贴压在哪',
+                onClick: () => setShowBg(!showBg),
+              }, showBg ? '壁纸预览：开' : '壁纸预览：关')
+            : null,
         ),
         status ? h('div', { className: 'k20-layout-msg' }, status) : null,
         error ? h('div', { className: 'k20-layout-msg err' }, error) : null,
@@ -439,9 +503,12 @@ window.__ModuleLoader__.load({
             h(
               'div',
               {
-                className: 'k20-layout-board',
+                className: `k20-layout-board${boardPoster ? ' with-bg' : ''}`,
                 ref: boardRef,
-                style: { aspectRatio: `${canvasW} / ${canvasH}` },
+                style: {
+                  aspectRatio: `${canvasW} / ${canvasH}`,
+                  ...(boardPoster ? { backgroundImage: `url("${boardPoster}")` } : {}),
+                },
                 onPointerMove,
                 onPointerUp: endDrag,
                 onPointerCancel: endDrag,
@@ -502,17 +569,6 @@ window.__ModuleLoader__.load({
       )
     }
 
-    function PanelIcon() {
-      return h(
-        'svg',
-        { width: 18, height: 18, viewBox: '0 0 18 18', fill: 'none', stroke: 'currentColor', strokeWidth: 1.4 },
-        h('rect', { x: 2, y: 2, width: 6, height: 6, rx: 1 }),
-        h('rect', { x: 10, y: 2, width: 6, height: 4, rx: 1 }),
-        h('rect', { x: 10, y: 8, width: 6, height: 8, rx: 1 }),
-        h('rect', { x: 2, y: 10, width: 6, height: 6, rx: 1 }),
-      )
-    }
-
     const inject = ['connection', 'slots']
 
     function apply(ctx) {
@@ -533,23 +589,15 @@ window.__ModuleLoader__.load({
         return res.value
       }
 
-      ctx.slots.inject('sidebar.panellist', () =>
+      // 并进「守岸人」壳的标签栏（keeper.tabs 由 dsh-keeper-console 声明）：
+      // 侧栏不再单独占一行，壁纸也在这个标签里管。
+      ctx.slots.inject('keeper.tabs', () =>
         ctx.slots.register(
           {
-            name: 'sidebar.panellist',
+            name: 'keeper.tabs',
             id: 'k20-layout',
-            order: 44,
-            label: () => '主屏布局',
-          },
-          PanelIcon,
-        ),
-      )
-
-      ctx.slots.inject('main', () =>
-        ctx.slots.register(
-          {
-            name: 'main',
-            key: 'k20-layout',
+            order: 20,
+            label: '主屏布局',
             inject: () => ({ call }),
           },
           LayoutPanel,

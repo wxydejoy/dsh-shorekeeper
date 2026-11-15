@@ -1,8 +1,9 @@
 // dsh-keeper-console — browser half.
 //
-// Registers a sidebar rail icon (sidebar.panellist) and a central panel (main)
-// addressed by the same id. All data comes from this package's host half over
-// the /keeper-console RPC channel — no model round-trip anywhere.
+// 侧栏只留一个入口「守岸人」：本包注册 sidebar.panellist 的一行 + main 面板，
+// main 面板是壳（顶部标签栏），并声明 keeper.tabs 子槽；设置/主屏布局/阅读
+// 各自往 keeper.tabs 注册一格（本包的「设置」也在里面，和其他包地位相同）。
+// 壳不碰业务，数据全走各包自己的 RPC 通道 —— 不经模型。
 //
 // Sections: 朗读语音（dsh-tts / voice-mode）· 主动关怀（keeper-watch 覆盖）
 // · 台灯控制（desk-mi 覆盖）· 状态（keeper-tts 在线）。
@@ -20,7 +21,9 @@ window.__ModuleLoader__.load({
     // ---------------------------------------------------- localized text --
 
     const DICT = {
-      panelName: ['守岸人设置', 'Keeper Settings'],
+      panelName: ['守岸人', 'Shorekeeper'],
+      settingsTab: ['设置', 'Settings'],
+      settingsHint: ['朗读、提醒、台灯这三个总闸', 'Switches for speech, alerts and the desk lamp'],
       refresh: ['刷新', 'Refresh'],
       loading: ['读取中…', 'Loading…'],
       groupVoice: ['朗读语音', 'Speech'],
@@ -50,6 +53,7 @@ window.__ModuleLoader__.load({
       online: ['在线', 'online'],
       offline: ['离线', 'offline'],
       settingsUnavailable: ['宿主 settings 服务不可用（重启 dsh 后重试）', 'Host settings service unavailable (restart dsh)'],
+      shellEmpty: ['这个入口还没有挂上标签页（等插件加载完再看）', 'No tabs registered yet (wait for plugins to load)'],
       on: ['开', 'On'],
       off: ['关', 'Off'],
     }
@@ -62,7 +66,7 @@ window.__ModuleLoader__.load({
     // ------------------------------------------------------------ styles --
 
     const CSS = `
-.dsh-keeper-console-root{height:100%;overflow-y:auto;box-sizing:border-box;padding:20px 24px 40px;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font-size:13px;line-height:1.5}
+.dsh-keeper-console-root{height:100%;overflow-y:auto;box-sizing:border-box;padding:16px 24px 40px;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font-size:13px;line-height:1.5}
 .dsh-keeper-console-toolbar{display:flex;align-items:center;gap:12px;margin-bottom:14px}
 .dsh-keeper-console-title{font-size:16px;font-weight:600;flex:1}
 .dsh-keeper-console-btn{appearance:none;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);border-radius:6px;padding:4px 12px;font-size:12px;cursor:pointer}
@@ -83,6 +87,16 @@ window.__ModuleLoader__.load({
 .dsh-keeper-console-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:middle}
 .dsh-keeper-console-msg{color:var(--dsw-alias-label-secondary);font-size:12px;margin-left:8px}
 .dsh-keeper-console-error{border:1px solid var(--dsw-alias-state-error-primary);color:var(--dsw-alias-state-error-primary);border-radius:6px;padding:8px 10px;margin-bottom:12px;white-space:pre-wrap;word-break:break-word}
+.dsh-keeper-shell{display:flex;flex-direction:column;height:100%;min-height:0;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary)}
+.dsh-keeper-shell-head{display:flex;align-items:flex-end;gap:16px;padding:12px 20px 0;flex:none;border-bottom:1px solid var(--dsw-alias-border-l1)}
+.dsh-keeper-shell-title{font-size:15px;font-weight:600;white-space:nowrap;padding-bottom:8px}
+.dsh-keeper-shell-tabs{display:flex;align-items:center;gap:2px;flex:1;min-width:0;overflow-x:auto;scrollbar-width:none}
+.dsh-keeper-shell-tabs::-webkit-scrollbar{display:none}
+.dsh-keeper-shell-tab{appearance:none;border:none;border-bottom:2px solid transparent;background:transparent;color:var(--dsw-alias-label-secondary);font-size:13px;padding:6px 12px;border-radius:6px 6px 0 0;cursor:pointer;white-space:nowrap}
+.dsh-keeper-shell-tab:hover{color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-1)}
+.dsh-keeper-shell-tab.on{color:var(--dsw-alias-brand-primary);border-bottom-color:var(--dsw-alias-brand-primary)}
+.dsh-keeper-shell-body{flex:1;min-height:0;overflow:hidden;position:relative}
+.dsh-keeper-shell-empty{padding:24px;color:var(--dsw-alias-label-secondary);font-size:13px}
 `
 
     // -------------------------------------------------------- panel icon --
@@ -291,7 +305,7 @@ window.__ModuleLoader__.load({
         h(
           'div',
           { className: 'dsh-keeper-console-toolbar' },
-          h('div', { className: 'dsh-keeper-console-title' }, tr('panelName')),
+          h('div', { className: 'dsh-keeper-console-title' }, tr('settingsHint')),
           flash ? h('span', { className: 'dsh-keeper-console-msg' }, flash) : null,
           h('button', { className: 'dsh-keeper-console-btn', onClick: () => void load() }, tr('refresh')),
         ),
@@ -419,6 +433,92 @@ window.__ModuleLoader__.load({
       )
     }
 
+    // --------------------------------------------------------------- shell --
+
+    const TAB_KEY = 'dsh-keeper-shell-tab'
+
+    function readStoredTab() {
+      try {
+        return window.localStorage.getItem(TAB_KEY) || ''
+      } catch {
+        return ''
+      }
+    }
+
+    function storeTab(id) {
+      try {
+        window.localStorage.setItem(TAB_KEY, id)
+      } catch {
+        // 隐私模式下 localStorage 会抛，标签选择不记也不影响用
+      }
+    }
+
+    // 侧栏只有一个「守岸人」入口：顶部标签栏 + 下面渲染当前标签的注册内容。
+    // 标签来自 keeper.tabs（本包声明），别的插件往那里注册，壳不认具体是谁。
+    function KeeperShell({ tabs, renderSlot }) {
+      const [list, setList] = useState(() => tabs.value())
+      const [active, setActive] = useState(() => {
+        const items = tabs.value()
+        const stored = readStoredTab()
+        if (stored && items.some((tab) => tab.id === stored)) return stored
+        return items.length > 0 ? items[0].id : ''
+      })
+
+      useEffect(() => {
+        const sync = (next) => {
+          setList(next)
+          setActive((current) => {
+            if (current && next.some((tab) => tab.id === current)) return current
+            const stored = readStoredTab()
+            if (stored && next.some((tab) => tab.id === stored)) return stored
+            return next.length > 0 ? next[0].id : ''
+          })
+        }
+        sync(tabs.value())
+        return tabs.subscribe(sync)
+      }, [tabs])
+
+      const pick = (id) => {
+        setActive(id)
+        storeTab(id)
+      }
+
+      return h(
+        'div',
+        { className: 'dsh-keeper-shell' },
+        h(
+          'div',
+          { className: 'dsh-keeper-shell-head' },
+          h('div', { className: 'dsh-keeper-shell-title' }, tr('panelName')),
+          h(
+            'nav',
+            { className: 'dsh-keeper-shell-tabs', role: 'tablist' },
+            list.map((tab) =>
+              h(
+                'button',
+                {
+                  key: tab.id,
+                  role: 'tab',
+                  type: 'button',
+                  'aria-selected': tab.id === active,
+                  className: `dsh-keeper-shell-tab${tab.id === active ? ' on' : ''}`,
+                  onClick: () => pick(tab.id),
+                },
+                tab.label,
+              ),
+            ),
+          ),
+        ),
+        h(
+          'div',
+          { className: 'dsh-keeper-shell-body', role: 'tabpanel' },
+          active && typeof renderSlot === 'function'
+            ? renderSlot('keeper.tabs', {}, { only: active })
+            : h('div', { className: 'dsh-keeper-shell-empty' }, tr('shellEmpty')),
+        ),
+      )
+    }
+
     // ------------------------------------------------------------- wiring --
 
     const inject = ['connection', 'slots']
@@ -459,16 +559,45 @@ window.__ModuleLoader__.load({
         ),
       )
 
+      // 标签目录：壳只看 id / order / label，内容由注册方自己渲染。
+      // 不做快照缓存，注册表变了重新读一遍（标签数量本来就少）。
+      const tabs = {
+        value: () => readTabs(ctx),
+        subscribe: (listener) => ctx.slots.subscribe('keeper.tabs', () => listener(readTabs(ctx))),
+      }
+
       ctx.slots.inject('main', () =>
         ctx.slots.register(
           {
             name: 'main',
             key: 'keeper-console',
-            inject: () => ({ call }),
+            children: { 'keeper.tabs': { kind: 'list', scope: 'root' } },
+            inject: () => ({ tabs }),
           },
+          KeeperShell,
+        ),
+      )
+
+      // 自己的设置页也是一个标签，和其他包平级（order 决定顺序）。
+      ctx.slots.inject('keeper.tabs', () =>
+        ctx.slots.register(
+          { name: 'keeper.tabs', id: 'keeper-settings', order: 10, label: tr('settingsTab'), inject: () => ({ call }) },
           KeeperPanel,
         ),
       )
+    }
+
+    /** 读 keeper.tabs 的注册项：id/order/label（label 可能是函数） */
+    function readTabs(ctx) {
+      const items = []
+      for (const entry of ctx.slots.entriesOfSlot('keeper.tabs')) {
+        const options = entry.options || {}
+        if (!options.id) continue
+        const raw = options.label
+        const label = typeof raw === 'function' ? raw() : raw
+        items.push({ id: options.id, order: options.order || 0, label: label || options.id })
+      }
+      return items.sort((a, b) => a.order - b.order)
     }
 
     return { apply, inject }

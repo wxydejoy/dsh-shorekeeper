@@ -14,6 +14,18 @@ import { createDeskVoice, type VoiceSessions } from './companion-voice.ts'
 import { HubClient } from './hub-client.ts'
 import { BackgroundClient, BackgroundRequestError } from './background-client.ts'
 import { createPosterStore, type PosterStore } from './poster.ts'
+import {
+  UploadRejected,
+  admitUpload,
+  assertContent,
+  describeLimits,
+  extensionsOf,
+  guardStream,
+  normalizeLimits,
+  peekHead,
+  type BackgroundKind,
+  type UploadLimits,
+} from './upload-guard.ts'
 import { GatewayClient } from './gateway.ts'
 import { createK20Tools } from './tools.ts'
 import { Config, hubBaseUrl, backgroundBaseUrl, type K20Config } from './config.ts'
@@ -116,7 +128,14 @@ export function apply(ctx: Context, config: K20Config): void {
   }
   ctx.logger('k20').info('k20 网关已挂上宿主 webServer（/health /v1/snapshot /v1/desk /v1/caption /v1/phone/layout /v1/lock /v1/devices/* /v1/companion/announce|stop|chat）')
   try {
-    registerLayoutPanel(ctx, { background, gateway: faceState })
+    registerLayoutPanel(ctx, {
+      background,
+      gateway: faceState,
+      limits: normalizeLimits({
+        imageMB: config.backgroundImageMaxMB,
+        videoMB: config.backgroundVideoMaxMB,
+      }),
+    })
   } catch (error) {
     ctx.logger('k20').warn('主屏布局页没挂上：%s', error instanceof Error ? error.message : String(error))
   }
@@ -130,6 +149,7 @@ interface WebServerLike {
 interface LayoutPanelDeps {
   background: BackgroundClient
   gateway: K20Gateway
+  limits: UploadLimits
 }
 
 /** 主屏布局页。读手机上的画布/槽位/默认值，保存写进本网关并落盘。 */
@@ -140,6 +160,18 @@ function registerLayoutPanel(ctx: Context, deps: LayoutPanelDeps): void {
     try {
       if (action === 'backgrounds') {
         return { ok: true, value: await deps.background.backgrounds() }
+      }
+      if (action === 'limits') {
+        return {
+          ok: true,
+          value: {
+            imageMB: deps.limits.imageMB,
+            videoMB: deps.limits.videoMB,
+            imageExts: extensionsOf('image'),
+            videoExts: extensionsOf('video'),
+            hint: describeLimits(deps.limits),
+          },
+        }
       }
       if (action === 'select') {
         if (typeof payload.id !== 'string' || payload.id === '') {
@@ -197,7 +229,7 @@ function registerLayoutPanel(ctx: Context, deps: LayoutPanelDeps): void {
     return
   }
   registerLayoutChannel(ctx, webServer, channel, handle)
-  registerBackgroundRoutes(ctx, webServer, deps.background, createPosterStore({
+  registerBackgroundRoutes(ctx, webServer, deps.background, deps.limits, createPosterStore({
     background: deps.background,
     log: (message) => ctx.logger('k20').warn(message),
   }))
@@ -207,11 +239,15 @@ function registerLayoutPanel(ctx: Context, deps: LayoutPanelDeps): void {
  *
  * 浏览器不直连手机 :17920（跨源 + cookie 在别人手里），这里由插件代持会话转发。
  * RPC 只传元数据（列表/切换/删除/清空），字节走这两条 HTTP 路由。
+ *
+ * 上传闸门（2026-11-15）：手机端不限大小也不验格式，所以扩展名白名单、魔数嗅探、
+ * 图片/视频分开的大小上限都在这里做——超限直接 413/415，不往手机传半截。
  */
 function registerBackgroundRoutes(
   ctx: Context,
   webServer: WebServerLike,
   background: BackgroundClient,
+  limits: UploadLimits,
   posters: PosterStore,
 ): void {
   const prefix = '/k20-bg'
@@ -221,6 +257,10 @@ function registerBackgroundRoutes(
     res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
     res.end(JSON.stringify({ ok: false, error: message }))
   }
+  const json = (res: Res, value: unknown): void => {
+    res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+    res.end(JSON.stringify({ ok: true, value }))
+  }
   const route = {
     kind: 'prefix' as const,
     path: prefix,
@@ -229,6 +269,16 @@ function registerBackgroundRoutes(
         const url = new URL(req.url ?? prefix, 'http://localhost')
         const rest = url.pathname.slice(prefix.length)
         try {
+          if (req.method === 'GET' && rest === '/limits') {
+            json(res, {
+              imageMB: limits.imageMB,
+              videoMB: limits.videoMB,
+              imageExts: extensionsOf('image'),
+              videoExts: extensionsOf('video'),
+              hint: describeLimits(limits),
+            })
+            return
+          }
           if (req.method === 'GET' && rest.startsWith('/media/')) {
             const id = decodeURIComponent(rest.slice('/media/'.length))
             if (id === '') {
@@ -256,13 +306,14 @@ function registerBackgroundRoutes(
               fail(res, 400, '缺少背景 id')
               return
             }
+            const width = posterWidth(url.searchParams.get('w'))
             const index = await background.backgrounds()
             const item = index.items.find((entry) => entry.id === id)
             if (item === undefined) {
               fail(res, 404, '没有这个背景')
               return
             }
-            const data = await readFile(await posters.get(item))
+            const data = await readFile(await posters.get(item, width))
             res.writeHead(200, {
               'content-type': 'image/jpeg',
               'content-length': String(data.byteLength),
@@ -275,30 +326,41 @@ function registerBackgroundRoutes(
             const filename = (url.searchParams.get('name') ?? '').trim()
             const realName = (url.searchParams.get('realname') ?? '').trim()
             if (filename === '') {
-              fail(res, 400, '缺少文件名')
+              fail(res, 400, '缺少文件名：/k20-bg/upload?name=海边.jpg&realname=守岸人')
               return
             }
+            const rawKind = url.searchParams.get('kind')
+            const kindHint: BackgroundKind | null =
+              rawKind === 'image' || rawKind === 'video' ? rawKind : null
             const declared = Number(req.headers['content-length'])
-            const payloadLength = Number.isFinite(declared) && declared > 0 ? declared : undefined
-            const index = payloadLength === undefined
+            const declaredLength = Number.isFinite(declared) && declared > 0 ? declared : undefined
+            const admission = admitUpload({ filename, declaredLength, kindHint, limits })
+            // 先验头再连手机：内容不对要当场拒，不给手机留半截文件
+            const peeked = await peekHead(req as unknown as AsyncIterable<Uint8Array>)
+            assertContent(peeked.head, admission)
+            const body = guardStream(peeked.head, peeked.rest, admission)
+            const index = admission.declared === undefined
               // 没有 Content-Length（chunked）时先收齐：手机端按长度读，空长度会被当成没文件
               ? await background.upload(
                   filename,
-                  new Uint8Array(await collect(req)),
+                  new Uint8Array(await collect(body)),
                   realName === '' ? undefined : realName,
                 )
               : await background.uploadStream(
                   filename,
-                  req as unknown as AsyncIterable<Uint8Array>,
+                  body,
                   realName === '' ? undefined : realName,
-                  payloadLength,
+                  admission.declared,
                 )
-            res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
-            res.end(JSON.stringify({ ok: true, value: index }))
+            json(res, index)
             return
           }
           fail(res, 404, 'not found')
         } catch (error) {
+          if (error instanceof UploadRejected) {
+            fail(res, error.status, error.message)
+            return
+          }
           const status = error instanceof BackgroundRequestError ? (error.status === 503 ? 503 : 400) : 500
           fail(res, status, error instanceof Error ? error.message : String(error))
         }
@@ -308,17 +370,27 @@ function registerBackgroundRoutes(
   }
   try {
     ctx.effect(() => webServer.register(route), 'k20: 背景壁纸通道')
-    ctx.logger('k20').info('背景壁纸通道已挂：%s/media/* %s/poster/* %s/upload', prefix, prefix, prefix)
+    ctx.logger('k20').info(
+      '背景壁纸通道已挂：%s/media/* %s/poster/* %s/upload %s/limits（%s）',
+      prefix, prefix, prefix, prefix, describeLimits(limits),
+    )
   } catch (error) {
     ctx.logger('k20').warn('背景壁纸通道挂载失败：%s', error instanceof Error ? error.message : String(error))
   }
 }
 
 /** 收齐请求体（只在拿不到 Content-Length 的 chunked 上传时用）。 */
-async function collect(req: import('node:http').IncomingMessage): Promise<Buffer> {
+async function collect(req: import('node:http').IncomingMessage | AsyncIterable<Uint8Array>): Promise<Buffer> {
   const chunks: Buffer[] = []
-  for await (const chunk of req) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string))
+  for await (const chunk of req) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array))
   return Buffer.concat(chunks)
+}
+
+/** 缩略图宽度：面板列表 320，布局预览板铺满要 960；其他值夹到 160–1600 */
+function posterWidth(raw: string | null): number {
+  const n = Number(raw)
+  if (!Number.isFinite(n) || n <= 0) return 320
+  return Math.min(Math.max(Math.round(n), 160), 1600)
 }
 
 /** 按 connection rpc 的信封格式直挂前缀路由（wire 见 dsh-client-connection 的 rpcFetchHandler）。 */

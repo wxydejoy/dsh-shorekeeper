@@ -30,7 +30,7 @@ cd "$ROOT/migration"
 O=$(python3 -m unittest discover -s tests 2>&1 | grep -E '^(OK|FAILED)' | head -1)
 if echo "$O" | grep -q '^OK'; then say "✅ migration $O"; else say "❌ migration ${O:-无输出}"; FAIL=1; fi
 
-if node --test "$ROOT/plugins/dsh-keeper-console/test/patch.test.mjs" >/tmp/keeper-console-test.out 2>&1; then
+if node --test "$ROOT/plugins/dsh-keeper-console/test/"*.test.mjs >/tmp/keeper-console-test.out 2>&1; then
   say "✅ keeper-console node:test"
 else
   say "❌ keeper-console node:test"; tail -20 /tmp/keeper-console-test.out; FAIL=1

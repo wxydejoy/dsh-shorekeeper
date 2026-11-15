@@ -7,6 +7,7 @@
 - token 抓法：`grep -o "token=[A-Za-z0-9_-]*" ~/.dsh/logs/dsh-web.out.log | tail -1`；种 cookie：`curl -c jar "http://10.14.14.117:3090/?token=…"`。console API：POST :3090/api/dsh-console/cmd（op: create/send/detail/sessions/cancel/selectModel/delete；send 支持 busyMode:'steer'）。
 - 微信：persona-modes.json / persona-active.json 现读现生效；路由 ~/.dsh/weixin/config.json 的 chatModel/proactiveModel 优先于全局默认（换模型两边一起改）。
 - 插件约定：TS，`export const inject=['tools']`（挂面板路由要加 'webServer' 且用 connection.register(ctx,…)）；分支改、check-all 绿了合 main 可推（push 授权仅 dsh-shorekeeper 仓库）。
+- 侧栏只留一行「守岸人」：`dsh-keeper-console` 的 main 面板声明 `keeper.tabs`(list) 并做标签壳；k20(主屏布局,20)、reading(阅读,30)、console(设置,10) 各注册一格。**别再给新面板注册 sidebar.panellist**，加到 keeper.tabs；`children` 要写在 register entry 顶层，壳所需 props 走 `inject` 传。契约测试 plugins/dsh-keeper-console/test/sidebar-shell.test.mjs。
 
 ## 规矩
 - 进度记在仓库根 plan-2026-11-03-evening-two-agent.md 的「进度」区。一次一件事，不擅自 push 越权，高危（熄屏等）要他点头。
