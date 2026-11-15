@@ -32,6 +32,19 @@ window.__ModuleLoader__.load({
 .k20-layout-chip.on{border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-brand-primary)}
 .k20-layout-chip.dim{opacity:.55}
 .k20-layout-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:10px;padding:8px 10px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px}
+.k20-bg-section{margin-top:28px;padding-top:18px;border-top:1px solid var(--dsw-alias-border-l1);max-width:920px;margin-left:auto;margin-right:auto}
+.k20-bg-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:10px}
+.k20-bg-text{width:110px;padding:4px 8px;border-radius:6px;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);color:inherit;font-size:12px}
+.k20-bg-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.k20-bg-card{display:flex;flex-direction:column;overflow:hidden;border:1px solid var(--dsw-alias-border-l1);border-radius:10px;background:var(--dsw-alias-bg-layer-1)}
+.k20-bg-card.current{border-color:var(--dsw-alias-brand-primary);box-shadow:0 0 0 1px var(--dsw-alias-brand-primary) inset}
+.k20-bg-thumb{position:relative;height:92px;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#0b1016;color:#93a4b8;font-size:22px}
+.k20-bg-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.k20-bg-meta{display:flex;flex-direction:column;gap:6px;padding:8px;font-size:12px}
+.k20-bg-name{line-height:1.3;word-break:break-all}
+.k20-bg-sub{color:var(--dsw-alias-label-secondary);font-size:11px}
+.k20-bg-actions{display:flex;flex-wrap:wrap;gap:6px}
+.k20-bg-badge{position:absolute;left:6px;top:6px;padding:1px 6px;border-radius:999px;background:var(--dsw-alias-brand-primary);color:#fff;font-size:10px}
 `
 
     function unwrap(value) {
@@ -95,6 +108,12 @@ window.__ModuleLoader__.load({
       const [busy, setBusy] = useState(false)
       const boardRef = useRef(null)
       const drag = useRef(null)
+      const [bg, setBg] = useState(null)
+      const [bgBusy, setBgBusy] = useState(false)
+      const [bgMsg, setBgMsg] = useState('')
+      const [bgErr, setBgErr] = useState(null)
+      const [realName, setRealName] = useState('守岸人')
+      const fileRef = useRef(null)
 
       const load = useCallback(async () => {
         setBusy(true)
@@ -128,6 +147,67 @@ window.__ModuleLoader__.load({
       }, [call])
 
       useEffect(() => { void load() }, [load])
+
+      // ── 背景壁纸：列表走 RPC，字节（缩略图/上传）走 /k20-bg 路由 ──
+      const loadBackgrounds = useCallback(async () => {
+        setBgBusy(true)
+        try {
+          setBg(await call('backgrounds'))
+          setBgErr(null)
+        } catch (err) {
+          setBgErr(err instanceof Error ? err.message : String(err))
+        } finally {
+          setBgBusy(false)
+        }
+      }, [call])
+
+      useEffect(() => { void loadBackgrounds() }, [loadBackgrounds])
+
+      const bgAction = async (action, payload, note) => {
+        setBgBusy(true)
+        setBgErr(null)
+        setBgMsg('')
+        try {
+          setBg(await call(action, payload || {}))
+          setBgMsg(note || '')
+        } catch (err) {
+          setBgErr(err instanceof Error ? err.message : String(err))
+        } finally {
+          setBgBusy(false)
+        }
+      }
+
+      const uploadBackground = async (file) => {
+        if (!file) return
+        const who = realName.trim()
+        if (who.length < 2) {
+          setBgErr('先填署名：2 到 20 个字，不能带数字（手机端会核验）')
+          return
+        }
+        setBgBusy(true)
+        setBgErr(null)
+        setBgMsg(`正在上传 ${file.name}…`)
+        try {
+          const query = new URLSearchParams({ name: file.name, realname: who })
+          const response = await fetch(`/k20-bg/upload?${query.toString()}`, { method: 'POST', body: file })
+          const data = await response.json().catch(() => null)
+          if (!response.ok || !data || data.ok !== true) {
+            throw new Error((data && data.error) || `上传失败：HTTP ${response.status}`)
+          }
+          setBg(data.value)
+          setBgMsg(`已上传并生效：${file.name}`)
+        } catch (err) {
+          setBgErr(err instanceof Error ? err.message : String(err))
+        } finally {
+          setBgBusy(false)
+          if (fileRef.current) fileRef.current.value = ''
+        }
+      }
+
+      const removeBackground = (item) => {
+        if (!window.confirm(`删除「${item.name}」？删了就找不回来了。`)) return
+        void bgAction('remove', { id: item.id }, `已删除：${item.name}`)
+      }
 
       const defaults = (snap && snap.defaults) || {}
 
@@ -219,6 +299,105 @@ window.__ModuleLoader__.load({
         const slot = slots.find((item) => item.id === id)
         return (slot && slot.label) || id
       }
+      const bgItems = (bg && Array.isArray(bg.items)) ? bg.items : []
+      const bgCurrent = (bg && bg.current) || null
+      const mediaUrl = (id) => `/k20-bg/media/${encodeURIComponent(id)}`
+      const sizeText = (bytes) => {
+        const n = Number(bytes)
+        if (!Number.isFinite(n) || n <= 0) return ''
+        if (n >= 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)}MB`
+        return `${Math.max(1, Math.round(n / 1024))}KB`
+      }
+
+      const backgroundSection = h(
+        'div',
+        { className: 'k20-bg-section' },
+        h(
+          'div',
+          { className: 'k20-layout-toolbar' },
+          h('div', { className: 'k20-layout-title' }, '背景壁纸'),
+          h('span', { className: 'k20-bg-sub' }, bgCurrent ? `当前：${bgCurrent}` : '当前：纯色'),
+        ),
+        h(
+          'div',
+          { className: 'k20-bg-row' },
+          h('button', { className: 'k20-layout-btn', disabled: bgBusy, onClick: () => void loadBackgrounds() }, '刷新'),
+          h('input', {
+            className: 'k20-bg-text',
+            value: realName,
+            placeholder: '署名',
+            maxLength: 20,
+            title: '手机端要求署名：2 到 20 个字，不能带数字',
+            onChange: (event) => setRealName(event.target.value),
+          }),
+          h('button', {
+            className: 'k20-layout-btn primary',
+            disabled: bgBusy,
+            onClick: () => { if (fileRef.current) fileRef.current.click() },
+          }, bgBusy ? '处理中…' : '上传壁纸'),
+          h('input', {
+            ref: fileRef,
+            type: 'file',
+            accept: 'image/jpeg,image/png,image/webp,video/mp4',
+            style: { display: 'none' },
+            onChange: (event) => void uploadBackground(event.target.files && event.target.files[0]),
+          }),
+          h('button', {
+            className: 'k20-layout-btn',
+            disabled: bgBusy || !bgCurrent,
+            onClick: () => void bgAction('clear', {}, '背景已恢复纯色'),
+          }, '恢复纯色'),
+        ),
+        bgMsg ? h('div', { className: 'k20-layout-msg' }, bgMsg) : null,
+        bgErr ? h('div', { className: 'k20-layout-msg err' }, bgErr) : null,
+        bgItems.length === 0
+          ? h('div', { className: 'k20-layout-msg' }, bgBusy ? '正在读手机…' : '手机里还没有壁纸，点「上传壁纸」传一张')
+          : h(
+            'div',
+            { className: 'k20-bg-grid' },
+            bgItems.map((item) => {
+              const isVideo = item.kind === 'video'
+              return h(
+                'div',
+                { key: item.id, className: `k20-bg-card${item.id === bgCurrent ? ' current' : ''}` },
+                h(
+                  'div',
+                  {
+                    className: 'k20-bg-thumb',
+                    title: isVideo ? '点开看视频' : item.name,
+                    style: isVideo ? { cursor: 'pointer' } : undefined,
+                    onClick: isVideo ? () => window.open(mediaUrl(item.id), '_blank') : undefined,
+                  },
+                  isVideo
+                    ? h('span', null, '▶')
+                    : h('img', { src: mediaUrl(item.id), alt: item.name, loading: 'lazy' }),
+                  item.id === bgCurrent ? h('span', { className: 'k20-bg-badge' }, '使用中') : null,
+                ),
+                h(
+                  'div',
+                  { className: 'k20-bg-meta' },
+                  h('div', { className: 'k20-bg-name' }, item.name),
+                  h('div', { className: 'k20-bg-sub' },
+                    `${isVideo ? '视频' : '图片'}${sizeText(item.bytes) ? ` · ${sizeText(item.bytes)}` : ''}${item.owner ? ` · ${item.owner}` : ''}`),
+                  h(
+                    'div',
+                    { className: 'k20-bg-actions' },
+                    h('button', {
+                      className: 'k20-layout-btn',
+                      disabled: bgBusy || item.id === bgCurrent,
+                      onClick: () => void bgAction('select', { id: item.id }, `已切换：${item.name}`),
+                    }, item.id === bgCurrent ? '使用中' : '切换'),
+                    h('button', {
+                      className: 'k20-layout-btn',
+                      disabled: bgBusy,
+                      onClick: () => removeBackground(item),
+                    }, '删除'),
+                  ),
+                ),
+              )
+            }),
+          ),
+      )
 
       return h(
         'div',
@@ -303,6 +482,7 @@ window.__ModuleLoader__.load({
               : h('div', { className: 'k20-layout-msg' }, '点一个磁贴再拖。保存只提交改过的槽位。'),
           )
           : h('div', { className: 'k20-layout-msg' }, busy ? '正在读手机…' : '还没有布局数据'),
+        backgroundSection,
       )
     }
 

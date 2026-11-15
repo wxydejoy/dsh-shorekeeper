@@ -5,12 +5,13 @@
  */
 
 import { randomUUID } from 'node:crypto'
+import { Readable } from 'node:stream'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { createDeskVoice, type VoiceSessions } from './companion-voice.ts'
 import { HubClient } from './hub-client.ts'
-import { BackgroundClient } from './background-client.ts'
+import { BackgroundClient, BackgroundRequestError } from './background-client.ts'
 import { GatewayClient } from './gateway.ts'
 import { createK20Tools } from './tools.ts'
 import { Config, hubBaseUrl, backgroundBaseUrl, type K20Config } from './config.ts'
@@ -133,8 +134,26 @@ interface LayoutPanelDeps {
 function registerLayoutPanel(ctx: Context, deps: LayoutPanelDeps): void {
   const channel = '/k20-layout'
   const handle = async (action: string, raw: unknown): Promise<unknown> => {
-    const payload = raw && typeof raw === 'object' ? (raw as { modules?: Record<string, PhoneModulePatch> }) : {}
+    const payload = raw && typeof raw === 'object' ? (raw as { modules?: Record<string, PhoneModulePatch>; id?: unknown }) : {}
     try {
+      if (action === 'backgrounds') {
+        return { ok: true, value: await deps.background.backgrounds() }
+      }
+      if (action === 'select') {
+        if (typeof payload.id !== 'string' || payload.id === '') {
+          throw Object.assign(new Error('select 需要 id'), { code: 'bad_request' })
+        }
+        return { ok: true, value: await deps.background.select(payload.id) }
+      }
+      if (action === 'remove') {
+        if (typeof payload.id !== 'string' || payload.id === '') {
+          throw Object.assign(new Error('remove 需要 id'), { code: 'bad_request' })
+        }
+        return { ok: true, value: await deps.background.remove(payload.id) }
+      }
+      if (action === 'clear') {
+        return { ok: true, value: await deps.background.clear() }
+      }
       if (action === 'snapshot') {
         let phone: unknown = null
         let phoneError: string | null = null
@@ -176,6 +195,98 @@ function registerLayoutPanel(ctx: Context, deps: LayoutPanelDeps): void {
     return
   }
   registerLayoutChannel(ctx, webServer, channel, handle)
+  registerBackgroundRoutes(ctx, webServer, deps.background)
+}
+
+/** 壁纸/背景的二进制通道：缩略图与预览流、上传流。
+ *
+ * 浏览器不直连手机 :17920（跨源 + cookie 在别人手里），这里由插件代持会话转发。
+ * RPC 只传元数据（列表/切换/删除/清空），字节走这两条 HTTP 路由。
+ */
+function registerBackgroundRoutes(ctx: Context, webServer: WebServerLike, background: BackgroundClient): void {  const prefix = '/k20-bg'
+  type Res = import('node:http').ServerResponse
+  type Req = import('node:http').IncomingMessage
+  const fail = (res: Res, status: number, message: string): void => {
+    res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+    res.end(JSON.stringify({ ok: false, error: message }))
+  }
+  const route = {
+    kind: 'prefix' as const,
+    path: prefix,
+    handler: (req: Req, res: Res) => {
+      void (async () => {
+        const url = new URL(req.url ?? prefix, 'http://localhost')
+        const rest = url.pathname.slice(prefix.length)
+        try {
+          if (req.method === 'GET' && rest.startsWith('/media/')) {
+            const id = decodeURIComponent(rest.slice('/media/'.length))
+            if (id === '') {
+              fail(res, 400, '缺少背景 id')
+              return
+            }
+            const upstream = await background.mediaResponse(id)
+            const headers: Record<string, string> = {
+              'content-type': upstream.headers.get('content-type') ?? 'application/octet-stream',
+              'cache-control': 'private, max-age=120',
+            }
+            const length = upstream.headers.get('content-length')
+            if (length !== null) headers['content-length'] = length
+            res.writeHead(200, headers)
+            if (upstream.body === null) {
+              res.end()
+              return
+            }
+            Readable.fromWeb(upstream.body as import('node:stream/web').ReadableStream<Uint8Array>).pipe(res)
+            return
+          }
+          if (req.method === 'POST' && rest === '/upload') {
+            const filename = (url.searchParams.get('name') ?? '').trim()
+            const realName = (url.searchParams.get('realname') ?? '').trim()
+            if (filename === '') {
+              fail(res, 400, '缺少文件名')
+              return
+            }
+            const declared = Number(req.headers['content-length'])
+            const payloadLength = Number.isFinite(declared) && declared > 0 ? declared : undefined
+            const index = payloadLength === undefined
+              // 没有 Content-Length（chunked）时先收齐：手机端按长度读，空长度会被当成没文件
+              ? await background.upload(
+                  filename,
+                  new Uint8Array(await collect(req)),
+                  realName === '' ? undefined : realName,
+                )
+              : await background.uploadStream(
+                  filename,
+                  req as unknown as AsyncIterable<Uint8Array>,
+                  realName === '' ? undefined : realName,
+                  payloadLength,
+                )
+            res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+            res.end(JSON.stringify({ ok: true, value: index }))
+            return
+          }
+          fail(res, 404, 'not found')
+        } catch (error) {
+          const status = error instanceof BackgroundRequestError ? (error.status === 503 ? 503 : 400) : 500
+          fail(res, status, error instanceof Error ? error.message : String(error))
+        }
+      })()
+      return undefined
+    },
+  }
+  try {
+    ctx.effect(() => webServer.register(route), 'k20: 背景壁纸通道')
+    ctx.logger('k20').info('背景壁纸通道已挂：%s/media/* %s/upload', prefix, prefix)
+  } catch (error) {
+    ctx.logger('k20').warn('背景壁纸通道挂载失败：%s', error instanceof Error ? error.message : String(error))
+  }
+}
+
+/** 收齐请求体（只在拿不到 Content-Length 的 chunked 上传时用）。 */
+async function collect(req: import('node:http').IncomingMessage): Promise<Buffer> {
+  const chunks: Buffer[] = []
+  for await (const chunk of req) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string))
+  return Buffer.concat(chunks)
 }
 
 /** 按 connection rpc 的信封格式直挂前缀路由（wire 见 dsh-client-connection 的 rpcFetchHandler）。 */

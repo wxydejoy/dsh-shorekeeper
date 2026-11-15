@@ -38,3 +38,20 @@ k20 安卓横屏摆件的 DSH 驱动插件：把这块屏变成守岸人的「�
 - 工具定义用 `@deepseek-ai/dsh-tools` 的 `defineTool` DSL（`@deepseek-ai/dsh@0.2.1-rc.5` 实测）：参数根级平铺、required 是每属性注解
 - 已知 TODO（T1 真机校准）：设置卡片接线（rc.5 SDK 未暴露 `installSection`）、高危工具的 host 审批接线（暂以 `lockEnabled` 配置闸门兜底）、watcher 随 fiber 卸载（SDK Events 无 dispose 事件）
 - `npm run typecheck` 零错误；`npm test` 38/38（mock Hub + mock BackgroundServer + mock webServer）
+
+## 侧栏面板「主屏布局」（含背景壁纸）
+
+`client.js` 在侧栏注册 `k20-layout` 面板（`sidebar.panellist` + `main`），上半部是槽位拖拽，
+下半部是「背景壁纸」——上传、切换、删除、恢复纯色。
+
+| 走向 | 通道 | 说明 |
+|---|---|---|
+| 元数据（snapshot / save / backgrounds / select / remove / clear） | `POST /k20-layout/<action>`（connection rpc 信封） | `src/index.ts` 的 `registerLayoutPanel` 直挂宿主 webServer，不经过 connection.rpc 的 fiber |
+| 缩略图、视频预览 | `GET /k20-bg/media/<id>` | 插件代持手机 cookie 转发 `:17920/api/backgrounds/<id>/media`，浏览器不直连手机 |
+| 上传 | `POST /k20-bg/upload?name=&realname=`（body 为文件原字节） | 边收边转，200MB 视频不进内存做 base64 |
+
+两个坑（2026-11-15 实测）：
+
+- 手机端 `BackgroundServer.readForm` 用 `Content-Length` 限流读，**chunked 上传会被当空文件**（400）。所以转发时必须把
+  「multipart 头 + 文件 + 尾」的总长度算出来显式带上；拿不到长度才退回整段缓冲。
+- 上传要实名：手机校验 2–20 个字、不能带数字，面板默认填「守岸人」，改署名再传。
