@@ -66,7 +66,7 @@ export function createK20Tools(deps: K20ToolDeps): ToolDefinition[] {
   const snapshot = defineTool({
     name: 'k20_snapshot',
     description:
-      '读取 k20 屏网关的当前状态：电脑在线位、字幕、播放标记。室内温度不在这里，问室温用 desk_mi_sensor。',
+      '读取 k20 屏网关的当前状态：电脑在线位、字幕、播放标记。室内温度不在这里，问室温用 mcp__mijia__get_device_properties 读「卧室温湿度计」。',
     parameters: {},
     output: {
       schema: { type: 'json' },

@@ -238,7 +238,6 @@ window.__ModuleLoader__.load({
       const [busyKey, setBusyKey] = useState('')
       const [flash, setFlash] = useState('')
       const [draftLimit, setDraftLimit] = useState(null)
-      const [draftRate, setDraftRate] = useState(null)
       const epoch = useRef(0)
 
       const load = useCallback(async () => {
@@ -380,29 +379,10 @@ window.__ModuleLoader__.load({
           }),
         ),
 
-        h(
-          Section,
-          { title: tr('groupDeskMi') },
-          h(ToggleRow, {
-            name: tr('controlEnabled'),
-            hint: tr('controlEnabledHint'),
-            checked: snap.deskMi.controlEnabled,
-            busy: busy('m-en'),
-            onChange: (v) => void run('m-en', 'setKeeper', { deskMi: { controlEnabled: v } }),
-          }),
-          h(NumberRow, {
-            name: tr('controlPerMinute'),
-            hint: tr('controlPerMinuteHint'),
-            value: snap.deskMi.controlPerMinute,
-            draft: draftRate,
-            onDraft: setDraftRate,
-            busy: busy('m-rate'),
-            onApply: () =>
-              void run('m-rate', 'setKeeper', {
-                deskMi: { controlPerMinute: Math.max(0, Math.floor(Number(draftRate) || 0)) },
-              }).then(() => setDraftRate(null)),
-          }),
-        ),
+        // 控灯区（原 desk-mi 开关 + 每分钟配额）随 desk-mi 于 2026-11-16 退役：
+        // 控灯权限与配额现在由米家 MCP 守卫持有
+        // （~/.dsh/local-bundles/dsh-mijia-console/bundles/mijia-mcp/cordis.patch.yml 的
+        // devices / controlPerMinute），面板不再改写，避免写回一个不存在的插件块。
 
         h(
           Section,

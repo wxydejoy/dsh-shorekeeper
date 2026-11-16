@@ -40,6 +40,9 @@ ctx.slots.inject('keeper.tabs', () =>
 
 ## 设置页内容
 
-朗读语音（dsh-tts / voice-mode）· 主动关怀（keeper-watch 覆盖）· 台灯与设备控制
-（desk-mi 覆盖）· 状态（keeper-tts 在线）。全走 `/keeper-console` RPC 通道，
-不过模型；`lib/index.js` 是宿主半区，`lib/client.js` 是手写 classic bundle（无构建）。
+朗读语音（dsh-tts / voice-mode）· 主动关怀（keeper-watch 覆盖）· 状态（keeper-tts 在线）。
+控灯区已于 2026-11-16 随 `dsh-shorekeeper-desk-mi` 退役下线：控灯权限与每分钟配额改由米家 MCP
+守卫持有（`~/.dsh/local-bundles/dsh-mijia-console/bundles/mijia-mcp/cordis.patch.yml` 的
+`devices` / `controlPerMinute`），面板不再改写 profile patch，避免写回一个不存在的插件块。
+全走 `/keeper-console` RPC 通道，不过模型；`lib/index.js` 是宿主半区，`lib/client.js` 是手写
+classic bundle（无构建）。

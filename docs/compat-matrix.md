@@ -37,7 +37,7 @@
 
 - 卸 **dsh-keeper-agenda**：`feeds: []` 常空，`desk_agenda` 全库只调过 1 次；日历实际由 `dsh-calendar`（`calendar_list`/`schedule_list`）承担。
 - 卸 **dsh-keeper-voice**：只提供 `keeper_status/stop/noise/voice_test`，全库 0 次调用；正式说话走 dsh-tts 的 custom provider 直连 keeper-tts :18100，不经过它。代价：barge-in 少一层 `keeper_stop` 兜底（dsh-tts `/v1/stop` + voice-mode VAD 仍在）。
-- 留：desk-mi（`desk_mi_*` 140+ 次）、k20（`k20_*` 28 次）、reading、console（侧栏壳）、watch（无工具但每天真推 PM2.5 告警）。
+- 留：desk-mi（`desk_mi_*` 140+ 次；当天晚些整套退役，见下节）、k20（`k20_*` 28 次）、reading、console（侧栏壳）、watch（无工具但每天真推 PM2.5 告警）。
 - 操作口径：先改 `~/.dsh/profiles/web/cordis.patch.yml` 删对应 insert 块（注释留回滚说明）→ `dsh plugin --profile web remove <pkg>` → 重启 → 本轮启动日志无 `failed to import`。仓库源码**保留**，install.sh 不再链接这两件。
 
 ### 2026-11-16 接入米家 MCP 工具面（第三方插件 dsh-mijia-console）
@@ -55,6 +55,27 @@
 - Python 运行时：`uv venv ~/.local/share/mijia-api/venv --python 3.12` + `mijiaAPI[mcp]`（需 fastmcp）；**复用已有 `~/.config/mijia-api/auth.json`，无需重扫**。
 - 安装坑：WorkBuddy 沙箱的 fs shim 会让 pnpm 建 link 依赖时 `EIO (os error 2)`，**必须 `ssh localhost` 跑 pnpm**（同 launchctl 的处理方式）。`dsh plugin add` 只改依赖，**还要手工把 bundle 名追加进 profile `dsh.profile.bundles`**，否则 patch 不生效。
 - 型号差异（照抄作者配置会错）：`iot.acpartner.x2` 的 mode 枚举是 0制冷/1制热/2自动/3送风/4除湿，与作者那台**顺序完全不同**；`xiaomi.light.lamp31` 色温上限 5100K 而非 6500K；三台都没有 `electric-power`，用电卡片不适用。
+
+### 2026-11-16 desk-mi 退役（米家工具面并入 MCP）
+
+米家 MCP 落地后，`dsh-shorekeeper-desk-mi` 的 4 个工具被覆盖或失效，整套下线：
+
+| 原工具 | 去向 | 判据 |
+|---|---|---|
+| `desk_now` | 删，不再需要 | dsh 0.2.2 内置 `@deepseek-ai/dsh-time-context`，三个 preset 都在启用，每步注入带时区的 ISO 时间与流逝时长；「运行时无时钟」这个 11-03 的前提已不成立 |
+| `desk_mi_list` | `mcp__mijia__list_devices` | 逐字段更全（含 model/online） |
+| `desk_mi_sensor` | `mcp__mijia__get_device_properties`（卧室/耗材温湿度计已进白名单，`readOnly: true`） | 实测回 `{temperature: 24.7, relative-humidity: 59, battery-level: 100}` |
+| `desk_mi_light` | `mcp__mijia__set_device_property`（`on` 属性，显式 true/false） | 白名单 did 精确匹配，另多出色温/模式/功率 |
+| 每分钟配额（TokenBucketLimiter 10/min） | 迁到 `@local/mijia-mcp` 的 `controlPerMinute` | 守卫内按 did 分桶，被拒文案带等待秒数；单测覆盖超额/越权/toggle/只读四路 |
+| 微信灯控快路径（`globalThis.__shorekeeperFastLight`） | **消失，接受** | 微信侧 `dsh-plugin-weixin` 已判 `typeof fastLight === 'function'`，未挂载直接进模型，不崩；代价是「开灯」慢 3–5 秒（多一次 LLM 往返） |
+
+- 操作：`cordis.patch.yml` 删 desk-mi insert 块（注释里留 8 行回滚）→ profile `package.json` 删 dependency 与 `dsh.profile.bundles` 条目 → `ssh localhost 'pnpm install'`（沙箱 EIO）→ 重启。仓库源码与 34 条单测**保留**，`check-all` 仍跑。
+- 连带改动：k20 的 `k20_snapshot` 描述从「问室温用 desk_mi_sensor」改成 MCP 工具名；keeper-console 面板下线「控灯开关/配额」两行（旧代码会往 profile patch 写回一个已不存在的插件块）。
+- 端到端实证：console API 起会话 → `mcp__mijia__get_device_properties` 读到 24.7 ℃ / 59 % → 模型答出数值+单位+电池，并自述控灯走 `set_device_property`、did 钉死不替人挑灯。
+
+### 顺带修掉的 `openai` 残包（同窗口发现）
+
+dsh 升级事故的遗留：`/opt/homebrew/lib/node_modules/@deepseek-ai/dsh/node_modules/openai/` 只剩 365 个文件、**没有 `package.json`**、缺 `auth/workload-identity-auth.js`，任何 LLM 调用报 `PI_AI_ERROR Cannot find module './auth/workload-identity-auth.js'`。修法：`npm pack openai@7.19.0`（版本取自残包 `version.js`）→ 旧目录备份到 `~/.dsh/backups/openai-broken-20261116` → `rsync -a` 覆盖（365 → 3548 文件）→ 重启。装/升 dsh 时若 npm 中途被打断，要顺手核一遍 `node -e "require('openai')"`。
 
 
 ## 升级流程（每次）
