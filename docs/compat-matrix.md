@@ -40,6 +40,23 @@
 - 留：desk-mi（`desk_mi_*` 140+ 次）、k20（`k20_*` 28 次）、reading、console（侧栏壳）、watch（无工具但每天真推 PM2.5 告警）。
 - 操作口径：先改 `~/.dsh/profiles/web/cordis.patch.yml` 删对应 insert 块（注释留回滚说明）→ `dsh plugin --profile web remove <pkg>` → 重启 → 本轮启动日志无 `failed to import`。仓库源码**保留**，install.sh 不再链接这两件。
 
+### 2026-11-16 接入米家 MCP 工具面（第三方插件 dsh-mijia-console）
+
+`dsh-mijia-sidebar` 1.0.1 只有 `slots`/`webServer`，**没有 `tools` 注入**，模型无法在对话里操作米家。补装第三方 `dsh-mijia-console`（上游 3bbd899，MIT，落在 `~/.dsh/local-bundles/`，本地化差异见该目录 `PATCHES.md`）：
+
+| 依赖的 dsh API | 0.2.2-rc.3 实测 |
+|---|---|
+| `@deepseek-ai/dsh-mcp-client`（stdio，`serverName/transport/command/args/toolCallTimeoutMs/failOnStartupError`） | ✅ 自带 0.2.2-rc.3，14 个工具注册为 `mcp__mijia__*` |
+| `ctx.tools.guard(fn)`（执行层白名单，fail-closed） | ✅ 存在，激活无报错 |
+| `ctx.tools.get(name).execute(args, {signal})`（面板复用同一 MCP 连接） | ✅ 面板读写走通 |
+| `ctx.webServer.register({kind:'exact'|'prefix'})`、`ctx.slots.register('sidebar.panellist'/'main')` | ✅ 路由与面板均生效 |
+| `ctx.systemPrompt.section` + `getSectionOrder('MCP_SERVERS')` | ✅ |
+
+- Python 运行时：`uv venv ~/.local/share/mijia-api/venv --python 3.12` + `mijiaAPI[mcp]`（需 fastmcp）；**复用已有 `~/.config/mijia-api/auth.json`，无需重扫**。
+- 安装坑：WorkBuddy 沙箱的 fs shim 会让 pnpm 建 link 依赖时 `EIO (os error 2)`，**必须 `ssh localhost` 跑 pnpm**（同 launchctl 的处理方式）。`dsh plugin add` 只改依赖，**还要手工把 bundle 名追加进 profile `dsh.profile.bundles`**，否则 patch 不生效。
+- 型号差异（照抄作者配置会错）：`iot.acpartner.x2` 的 mode 枚举是 0制冷/1制热/2自动/3送风/4除湿，与作者那台**顺序完全不同**；`xiaomi.light.lamp31` 色温上限 5100K 而非 6500K；三台都没有 `electric-power`，用电卡片不适用。
+
+
 ## 升级流程（每次）
 
 1. 新开 `bump/dsh-<ver>` 分支，改四件套版本钉
