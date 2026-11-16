@@ -24,7 +24,10 @@
 - Bash 工具里 nohup & 的进程随命令死，用 run_in_background；Chrome/IAB 免谈。
 - plist 写死 --host 10.14.14.117 → 127.0.0.1:3090 必拒连；`/` 的 403 是 DNS-rebinding 栅栏正常行为，API 面不拦。**/api 栅栏按 Origin/Referer/Host 判**，代理/门卫必须改写这三个头否则全 403。
 - 工具名必须 `[A-Za-z0-9_-]`（火山 openai-completions 遇点号直接 400 tools.N.function.name）。
-- pnpm patch 会从 registry 重拉覆盖 node_modules：先存档再 patch；patchedDependencies 在 pnpm-workspace.yaml。
+- pnpm patch 会从 registry 重拉覆盖 node_modules：先存档再 patch；patchedDependencies 在 pnpm-workspace.yaml（`pnpm add --force` 重跑整树后 patch 仍生效，已验证）。
+- **装/升 dsh 只能用 `/opt/homebrew/bin/npm`（node v25）**：WorkBuddy 自带 node 22 的 npm 全局前缀指向 `~/.workbuddy/binaries/node/…/bin`，rename bin 报 EIO 装不上；安装被打断后 `dsh` 软链会留在 `.dsh-XXXX` 临时名，补 `ln -sfn ../lib/node_modules/@deepseek-ai/dsh/lib/bin.js /opt/homebrew/bin/dsh`。
+- **dsh 0.2.2 起 engines.dsh 是硬闸**：不兼容的 profile bundle 直接 skipping（不再降级跑）。加/升生态插件先 `npm view <pkg>@latest engines.dsh`。当前 0.2.2-rc.3 + dsh-arrowkey-nav 0.5.10 / dsh-ops 0.5.5 / dsh-tui 0.20.1。
+- pnpm `ERR_PNPM_EIO [symlinkAllModules]` = 虚拟目录只剩依赖软链、包本体没落地；删 `node_modules/.pnpm/<pkg>+<ver>_*` 后 `pnpm add --force`。
 
 ## 模型/provider
 - 当前默认 = 火山 `ark/deepseek-v4-1-flash-261017`。scnet 2026-11-06 起账号级 431（402 是单模型余额，别混）。**切 provider 后必须扫存量会话钉定**（console op:selectModel 改），教训见 k20 语音事故：会话钉死挂掉的 provider → turn 无正文 → 前端兜底「没接住」。
