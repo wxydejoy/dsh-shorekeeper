@@ -7,7 +7,7 @@
 #       自写 wechat 桥已从仓库删除，入口是 dsh-plugin-weixin）。
 set -euo pipefail
 
-DSH_VERSION="0.2.1-rc.5"          # 方案钉死；升级先跑 docs/compat-matrix.md
+DSH_VERSION="0.2.2-rc.3"          # 方案钉死；升级先跑 docs/compat-matrix.md
 PROFILE_NAME="shorekeeper"
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
