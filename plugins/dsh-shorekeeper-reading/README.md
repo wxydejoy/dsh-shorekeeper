@@ -24,7 +24,7 @@
 | `reading_progress` | 更新进度（页码/百分比/章节），守岸人可代记「看到 217 页了」 | read-only |
 | `reading_note` | 摘抄与随想落库，可关联书与章节 | read-only |
 | `reading_ask` | 对读过的内容提问（结合记忆/摘要） | read-only |
-| 听书模式 | 调 dsh-keeper-voice 朗读书籍内容（分段流式，可打断） | 审批 |
+| 听书模式 | 调 keeper-tts（:18100）朗读书籍内容（分段流式，可打断） | 审批 |
 
 ## 数据来源
 

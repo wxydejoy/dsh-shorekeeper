@@ -69,7 +69,9 @@ say "4/5 自写插件链接"
 # 拷进 .pnpm store，源码落到 node_modules 下，Node 的 TS strip-only 模式直接拒载
 # （ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING），症状同样是 boot 静默降级。
 # 同理插件源码不得用 TS 参数属性（constructor(readonly x)），strip-only 不支持。
-for plugin in dsh-shorekeeper-desk-mi dsh-shorekeeper-k20 dsh-keeper-voice dsh-shorekeeper-reading; do
+# 2026-11-16：dsh-keeper-voice / dsh-keeper-agenda 已从运行面卸下（只注册从不调用的工具），
+# 不再链接；源码留在 plugins/ 下，需要时按 docs/compat-matrix.md 的回滚说明装回。
+for plugin in dsh-shorekeeper-desk-mi dsh-shorekeeper-k20 dsh-shorekeeper-reading; do
   if [ ! -d "${REPO_DIR}/plugins/${plugin}/node_modules" ]; then
     echo "  ↳ ${plugin} 缺 node_modules，先装本地依赖…"
     (cd "${REPO_DIR}/plugins/${plugin}" && npm install --silent)

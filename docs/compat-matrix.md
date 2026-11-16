@@ -31,6 +31,15 @@
 - pnpm 侧偶发 `ERR_PNPM_EIO [symlinkAllModules]`：虚拟目录里只剩依赖软链、包本体没落地。删掉 `node_modules/.pnpm/<pkg>+<ver>_*` 后 `pnpm add <pkg> --force` 可修复。
 - `pnpm add --force` 会重跑整棵树，**微信 5 文件 patch 未受影响**（patchedDependencies 生效，升级后 shasum 逐一比对一致）。
 
+### 2026-11-16 插件瘦身（同一次维护窗口）
+
+判据不是「装没装」，而是**实际工具调用次数**（解压 `~/.dsh/sessions/*/*.jsonl.zstd` 统计 `type:"tool-call"`）：
+
+- 卸 **dsh-keeper-agenda**：`feeds: []` 常空，`desk_agenda` 全库只调过 1 次；日历实际由 `dsh-calendar`（`calendar_list`/`schedule_list`）承担。
+- 卸 **dsh-keeper-voice**：只提供 `keeper_status/stop/noise/voice_test`，全库 0 次调用；正式说话走 dsh-tts 的 custom provider 直连 keeper-tts :18100，不经过它。代价：barge-in 少一层 `keeper_stop` 兜底（dsh-tts `/v1/stop` + voice-mode VAD 仍在）。
+- 留：desk-mi（`desk_mi_*` 140+ 次）、k20（`k20_*` 28 次）、reading、console（侧栏壳）、watch（无工具但每天真推 PM2.5 告警）。
+- 操作口径：先改 `~/.dsh/profiles/web/cordis.patch.yml` 删对应 insert 块（注释留回滚说明）→ `dsh plugin --profile web remove <pkg>` → 重启 → 本轮启动日志无 `failed to import`。仓库源码**保留**，install.sh 不再链接这两件。
+
 ## 升级流程（每次）
 
 1. 新开 `bump/dsh-<ver>` 分支，改四件套版本钉
