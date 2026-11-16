@@ -86,6 +86,47 @@ dsh 升级事故的遗留：`/opt/homebrew/lib/node_modules/@deepseek-ai/dsh/nod
   - 通用口径：patch 按 **entry id** 定位，不是包名，也不是 name。写完必须 dump 一次核对。
 - **微信米家工具面 14 → 5**：deny 掉 `list_homes` / `list_scenes` / `list_consumables` / `get_device_spec` / `run_scene` / `run_speaker_command` / `speaker_play` / `login` / `login_status`；保留 `list_devices` / `get_device_properties` / `set_device_property` / `run_device_action` / `get_statistics`。`tools.restrict({deny})` 是**精确名 Set** 匹配，不支持通配，只能逐个列。
 
+### 2026-11-17 手机端（iPhone 16 Pro）侧栏空白/条目缺失
+
+**现象**：393×852 视口打开抽屉，只能看到面板列表前 5 项（插件…微信BOT），「肥鱼日记/守岸人/记忆」消失；文字右侧被切；新会话按钮压成一根 26×199 的灰色竖条。
+
+**根因**：`dsh-console-plugin@0.5.62` 的 `NARROW_CSS_TEXT`（`@media (max-width: 520px)`，由 `#dsh-console-narrow-css` 注入）里 8 条规则裸用 `[role=dialog]`：
+
+```css
+[role=dialog] { width:100vw !important; height:100vh !important; flex-direction:column !important; padding:0 !important }
+[role=dialog] > div { width:100% !important; flex:1 1 auto !important; display:flex !important; flex-direction:column !important }
+```
+
+而 dsh 0.2.2 手机抽屉的侧栏根节点**就是** `role="dialog"`，于是：
+
+| 被误伤的元素 | 后果 |
+|---|---|
+| 侧栏 root（`[role=dialog]`） | 撑到 `100vw`=393，但抽屉容器只有 338（该插件另把 `sidebarCol` 设成 fixed 86vw）→ 右侧 55px 被 `overflow:hidden` 裁掉，文字截断 |
+| `> div`（logoRow/newSessionRow/scrollRegion/footArea） | 全被 `flex:1 1 auto` + `flex-direction:column` 均分：newSessionRow 变纵向（按钮 26×199），footer 抢到 251px，滚动区只剩 161px → 面板列表 304px 放不下，后 4 项被 footer 盖住 |
+
+**判据（下次自查用）**：手机视口下 `document.querySelector('[class*="sidebarCol"]')` 宽 338，而 `[class*="quietBars"]`（侧栏 root）宽 393；`[class*="newSessionRow"]` 的 `getComputedStyle(...).flexDirection === 'column'` 且其祖先**没有** `collapsed` 类。
+
+**修法**：把这 8 条规则限定为「overlay 直接子」，只作用于该插件自己（真弹窗）里的 dialog：
+
+```css
+div[class*="overlay"] > [role=dialog] { … }
+div[class*="overlay"] > [role=dialog] > div { … }
+```
+
+落点：`profile/patches/dsh-console-plugin@0.5.62.patch`（仓库归档）→ 复制到 `~/.dsh/profiles/web/patches/` → `pnpm-workspace.yaml` 的 `patchedDependencies` 登记 → `ssh localhost 'pnpm install'`（沙箱 EIO）→ 重启。`profile/install.sh` 已加入复制与登记（并顺手删掉已退役的 `dsh-mijia-sidebar@1.0.1` 安装行）。
+
+**验证**（Chrome headless + CDP `Emulation.setDeviceMetricsOverride` 393×852，dsh 内置浏览器取不到 DOM，截图超 10MiB）：
+
+| 指标 | 修前 | 修后 |
+|---|---|---|
+| 侧栏 root 宽 | 393（视口宽） | 280 |
+| 面板列表可视区高 | 161 | 648 |
+| 九个面板项 | 只画到第 5 项 | 全部可见（y 116…420） |
+| 新会话按钮 | 26×199 竖条 | 256×38 横条 |
+| 桌面 1440×900 | — | 一致无回归（drawer=null、sidebarCol 280、nav 264） |
+
+**升级注意**：`dsh-console-plugin` 升级会丢弃该 patch（0.5.76/0.5.77 仍带裸规则）。升完必须重做 patch，并在手机视口复查上面三条判据。
+
 
 ## 升级流程（每次）
 

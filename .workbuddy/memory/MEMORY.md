@@ -25,10 +25,12 @@
 - launchctl：WorkBuddy 进程内一律 error 5 → 走 `ssh localhost 'launchctl …'`（ZCode 侧改为关沙箱直跑）。bootout 后等 job 消失再 bootstrap，否则竞态 error 5。
 - launchd plist 必须显式 EnvironmentVariables.PATH=/opt/homebrew/bin:…。
 - 重启 :3090：`ssh localhost 'launchctl bootout gui/501/cn.weiekko.dsh-web; launchctl bootstrap gui/501 ~/Library/LaunchAgents/cn.weiekko.dsh-web.plist'`。**别用市场页「保存并重启」**（会写 disabled 把插件摘掉，还可能 EADDRINUSE 抢端口）。
-- Bash 工具里 nohup & 的进程随命令死，用 run_in_background；Chrome/IAB 免谈。
+- Bash 工具里 nohup & 的进程随命令死，用 run_in_background。内置 IAB 浏览器取不到 DOM（`dom_cua_get_visible_dom` 返回空）且截图超 10 MiB，手机视口验收走 Chrome headless + CDP（见下）。
 - plist 写死 --host 10.14.14.117 → 127.0.0.1:3090 必拒连；`/` 的 403 是 DNS-rebinding 栅栏正常行为，API 面不拦。**/api 栅栏按 Origin/Referer/Host 判**，代理/门卫必须改写这三个头否则全 403。
 - 工具名必须 `[A-Za-z0-9_-]`（火山 openai-completions 遇点号直接 400 tools.N.function.name）。
 - pnpm patch 会从 registry 重拉覆盖 node_modules：先存档再 patch；patchedDependencies 在 pnpm-workspace.yaml（`pnpm add --force` 重跑整树后 patch 仍生效，已验证）。
+- **`dsh-console-plugin` 的窄屏 CSS 会把 dsh 0.2.2 手机抽屉打散**（2026-11-17 已 patch）：它 `@media(max-width:520px)` 里裸用 `[role=dialog]{width:100vw}` + `> div{flex:1 1 auto;flex-direction:column}`，而**侧栏根节点就是 role=dialog** → 面板列表被 footer 挤掉、新会话按钮变竖条。已用 `div[class*="overlay"] > [role=dialog]` 限定作用域，patch 在 `profile/patches/dsh-console-plugin@0.5.62.patch`（install.sh 已登记）。**升该插件会丢 patch**（0.5.76/0.5.77 仍有此问题）。判据：手机视口下 `[class*="sidebarCol"]` 宽 338 但 `[class*="quietBars"]` 宽 393，或 `newSessionRow` 的 computed flexDirection 是 column 而祖先无 collapsed。
+- **手机视口验收靠 Chrome headless + CDP**：dsh 内置浏览器 `dom_cua_get_visible_dom` 返回空、`tab_screenshot` 超 10 MiB。起 `Chrome --headless=new --remote-debugging-port=9333`（经 ssh localhost，否则沙箱拦），node 22 用全局 `WebSocket` 连 CDP，`Emulation.setDeviceMetricsOverride{width:393,height:852,deviceScaleFactor:3,mobile:true}` + `Page.captureScreenshot`。查某条 CSS 谁写的：`DOM.requestNode` → `CSS.getMatchedStylesForNode` → `CSS.getStyleSheetText`。
 - **装/升 dsh 只能用 `/opt/homebrew/bin/npm`（node v25）**：WorkBuddy 自带 node 22 的 npm 全局前缀指向 `~/.workbuddy/binaries/node/…/bin`，rename bin 报 EIO 装不上；安装被打断后 `dsh` 软链会留在 `.dsh-XXXX` 临时名，补 `ln -sfn ../lib/node_modules/@deepseek-ai/dsh/lib/bin.js /opt/homebrew/bin/dsh`。
 - **dsh 0.2.2 起 engines.dsh 是硬闸**：不兼容的 profile bundle 直接 skipping（不再降级跑）。加/升生态插件先 `npm view <pkg>@latest engines.dsh`。当前 0.2.2-rc.3 + dsh-arrowkey-nav 0.5.10 / dsh-ops 0.5.5 / dsh-tui 0.20.1。
 - pnpm `ERR_PNPM_EIO [symlinkAllModules]` = 虚拟目录只剩依赖软链、包本体没落地；删 `node_modules/.pnpm/<pkg>+<ver>_*` 后 `pnpm add --force`。
@@ -37,6 +39,7 @@
 - 当前默认 = 火山 `ark/deepseek-v4-1-flash-261017`。scnet 2026-11-06 起账号级 431（402 是单模型余额，别混）。**切 provider 后必须扫存量会话钉定**（console op:selectModel 改），教训见 k20 语音事故：会话钉死挂掉的 provider → turn 无正文 → 前端兜底「没接住」。
 
 ## 已闭环事故（要点）
+- **提醒去重必须落盘**：keeper-watch 的「同一件事一天一次」原来只存内存，dsh 一天重启六次就发了六条一样的 PM2.5（2026-11-16）。现落 `~/.dsh/keeper-watch-state.json`。判据：**journal 的 `out` 是发送前写的，不代表送达**；`outbox.json` 里 attempts≥8 = parked 永不再试，要手动 drop。
 - k20 语音接不着 = 会话钉在 431 的 scnet；已钉火山，14.4s 真回复。链路：麦→VAD→app→/v1/companion/chat→书桌会话→字幕+TTS。遗留：休眠 wx-pro-11382a15e 仍钉 scnet；k20 reasoningEffort 未钉可再压延迟。
 - keeper-tts 502 / 崩豆子 / 哑火 = PortAudio 流泄漏：callback 空缓冲静音不杀流、start_stream 先关旧流、失败退避重试；句柄失效时 kickstart `cn.weiekko.companion-tts`。诊断口 /reading-panel/status。
 - 朗读音量 = 采样增益（volume/100），与系统音量解耦。系统默认输出被 NoMachine 劫持时用 `SwitchAudioSource -t output -s "Mac mini扬声器"`。

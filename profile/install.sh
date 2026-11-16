@@ -39,13 +39,24 @@ elif [ -f "$WS_FILE" ] && ! grep -q 'dsh-plugin-weixin@1.4.3' "$WS_FILE"; then
   printf '  dsh-plugin-weixin@1.4.3: patches/dsh-plugin-weixin@1.4.3.patch\n' >> "$WS_FILE"
 fi
 
+# dsh-console-plugin 手机窄屏 CSS 消毒（2026-11-17）：它把 [role=dialog] 全量改成
+# 100vw/flex-column，而 dsh 0.2.2 的手机抽屉侧栏根节点也是 role=dialog ——
+# 于是整个侧栏被撑到视口宽、新会话按钮压成竖条、面板列表被 footer 挤掉。
+# patch 把 8 条规则限定为 overlay 直接子（只作用于它自己的弹窗）。
+# 若升级该插件，务必重做此 patch 并复核手机视口下的侧栏。
+CONSOLE_PATCH="dsh-console-plugin@0.5.62"
+cp "${REPO_DIR}/profile/patches/${CONSOLE_PATCH}.patch" \
+   "$HOME/.dsh/profiles/${PROFILE_NAME}/patches/${CONSOLE_PATCH}.patch"
+if [ -f "$WS_FILE" ] && ! grep -q "${CONSOLE_PATCH}" "$WS_FILE"; then
+  printf '  %s: patches/%s.patch\n' "${CONSOLE_PATCH}" "${CONSOLE_PATCH}" >> "$WS_FILE"
+fi
+
 for pkg in \
   dsh-glass-weather@0.3.0 \
   dsh-weather-panel@1.8.0 \
   dsh-vitals@0.1.19 \
   '@doitian/dsh-music@1.2.0' \
   dsh-voice-mode@0.7.34 \
-  dsh-mijia-sidebar@1.0.1 \
   feiyu-memory@4.0.2 \
   dsh-calendar@0.14.3 \
   dsh-notify-me@1.17.0 \
