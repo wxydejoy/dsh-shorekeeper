@@ -74,7 +74,9 @@ describe('createWatcher 端到端（假数据驱动）', () => {
       pm25Threshold: 75,
       cpuTempThresholdC: 85,
       cpuTempSustainedSec: 120,
-      memoryPercentThreshold: 92,
+      cpuPercentThreshold: 80,
+      cpuPercentSustainedSec: 300,
+      memoryPercentThreshold: 85,
       memorySustainedSec: 300,
       sedentaryMinutes: 90,
       watchDeviceIds: [],
@@ -82,8 +84,12 @@ describe('createWatcher 端到端（假数据驱动）', () => {
       pcOfflineAlert: false,
       pcOfflineSustainedSec: 600,
       phoneOfflineSustainedSec: 300,
+      localIdleProbe: true,
       notifyUrl: 'http://127.0.0.1:47832/notify',
       notifyTokenPath: '/tmp/nonexistent-notify.json',
+      voiceEnabled: true,
+      voiceBaseUrl: 'http://127.0.0.1:18100',
+      voiceVolume: 30,
       activationAlert: true,
       activationLogPath: '',
       tickSec: 60,
@@ -94,16 +100,22 @@ describe('createWatcher 端到端（假数据驱动）', () => {
   interface Harness {
     watcher: Watcher
     sent: string[]
+    spoken: string[]
     setSnapshot(s: unknown): void
     setPhone(alive: boolean): void
     setActivation(s: ActivationScan | null): void
+    setIdle(sec: number | null): void
+    setVoiceOk(ok: boolean): void
   }
 
   function makeHarness(cfg: Partial<KeeperWatchConfig> = {}): Harness {
     const sent: string[] = []
+    const spoken: string[] = []
     let snapshot: unknown = null
     let phone = true
     let activation: ActivationScan | null = null
+    let localIdle: number | null = null
+    let voiceOk = true
     const watcher = createWatcher(makeConfig(cfg), {
       fetchSnapshot: async () => snapshot as never,
       phoneAlive: async () => phone,
@@ -111,13 +123,24 @@ describe('createWatcher 端到端（假数据驱动）', () => {
       fetchHourly: async () => ({ currentCelsius: 14, currentCode: 0, hourly: { time: [], celsius: [], code: [], windKmh: [] } }),
       fetchPm25: async () => 20,
       readActivationFailures: async () => activation,
+      localIdleSec: async () => localIdle,
+      voice: {
+        speak: async (t) => {
+          if (!voiceOk) return false
+          spoken.push(t)
+          return true
+        },
+      },
     })
     return {
       watcher,
       sent,
+      spoken,
       setSnapshot: (s) => (snapshot = s),
       setPhone: (a) => (phone = a),
       setActivation: (s) => (activation = s),
+      setIdle: (s) => (localIdle = s),
+      setVoiceOk: (ok) => (voiceOk = ok),
     }
   }
 
@@ -276,6 +299,82 @@ describe('createWatcher 端到端（假数据驱动）', () => {
     await watcher.tickOnce(new Date(t0.getTime() + 92 * 60_000))
     await watcher.tickOnce(new Date(t0.getTime() + 181 * 60_000))
     expect(sent).toHaveLength(1)
+  })
+
+  it('hub 只报 percent 没有温度：按占用率判，持续高位才说', async () => {
+    const h = makeHarness()
+    const t0 = at(10)
+    // 本机 hub 的真实形状：cpu 只有 percent，没有 temp_celsius
+    h.setSnapshot({ pc: { online: true, cpu: { percent: 95 }, memory: { percent: 40 } } })
+    await h.watcher.tickOnce(t0)
+    await h.watcher.tickOnce(new Date(t0.getTime() + 299_000)) // 差 1 秒：不说
+    expect(h.sent).toHaveLength(0)
+    await h.watcher.tickOnce(new Date(t0.getTime() + 301_000))
+    expect(h.sent).toHaveLength(1)
+    expect(h.sent[0]).toContain('95%')
+  })
+
+  it('有温度时不看占用率：同一件事不说两遍', async () => {
+    const h = makeHarness()
+    const t0 = at(10)
+    h.setSnapshot({ pc: { online: true, cpu: { temp_celsius: 90, percent: 95 }, memory: { percent: 40 } } })
+    await h.watcher.tickOnce(t0)
+    await h.watcher.tickOnce(new Date(t0.getTime() + 301_000))
+    expect(h.sent).toHaveLength(1)
+    expect(h.sent[0]).toContain('90°')
+  })
+
+  it('快照没有 idle_sec：本机探针兜底，久坐照样能算', async () => {
+    const h = makeHarness()
+    const t0 = at(10)
+    h.setSnapshot({ pc: { online: true, cpu: { percent: 10 }, memory: { percent: 40 } } }) // 无 idle_sec
+    h.setIdle(10) // 一直在用
+    await h.watcher.tickOnce(t0)
+    await h.watcher.tickOnce(new Date(t0.getTime() + 89 * 60_000))
+    expect(h.sent).toHaveLength(0)
+    await h.watcher.tickOnce(new Date(t0.getTime() + 90 * 60_000))
+    expect(h.sent).toEqual(['坐了一阵了，起来走走。'])
+  })
+
+  it('本机探针取不到（null）：不当成一直在用，也不瞎报', async () => {
+    const h = makeHarness()
+    const t0 = at(10)
+    h.setSnapshot({ pc: { online: true, cpu: { percent: 10 }, memory: { percent: 40 } } })
+    h.setIdle(null)
+    await h.watcher.tickOnce(t0)
+    await h.watcher.tickOnce(new Date(t0.getTime() + 200 * 60_000))
+    expect(h.sent).toHaveLength(0)
+  })
+
+  it('提醒同时出声：文本与微信那条一致', async () => {
+    const h = makeHarness()
+    const t0 = at(10)
+    h.setSnapshot({ pc: { online: true, cpu: { percent: 95 }, memory: { percent: 40 } } })
+    await h.watcher.tickOnce(t0)
+    await h.watcher.tickOnce(new Date(t0.getTime() + 301_000))
+    expect(h.sent).toHaveLength(1)
+    expect(h.spoken).toEqual(h.sent)
+  })
+
+  it('出声失败不影响文字：微信那条照发', async () => {
+    const h = makeHarness()
+    h.setVoiceOk(false)
+    const t0 = at(10)
+    h.setSnapshot({ pc: { online: true, cpu: { percent: 95 }, memory: { percent: 40 } } })
+    await h.watcher.tickOnce(t0)
+    await h.watcher.tickOnce(new Date(t0.getTime() + 301_000))
+    expect(h.sent).toHaveLength(1)
+    expect(h.spoken).toHaveLength(0)
+  })
+
+  it('免打扰拦下的不出声：闸门在出声之前', async () => {
+    const h = makeHarness()
+    const t0 = at(2) // 凌晨 2 点，免打扰
+    h.setSnapshot({ pc: { online: true, cpu: { percent: 95 }, memory: { percent: 40 } } })
+    await h.watcher.tickOnce(t0)
+    await h.watcher.tickOnce(new Date(t0.getTime() + 301_000))
+    expect(h.sent).toHaveLength(0)
+    expect(h.spoken).toHaveLength(0)
   })
 describe('激活自检哨兵（watcher 集成）', () => {
   it('失败名单报一次；同拍重扫不重发；重启（bootCount 变）才再报', async () => {

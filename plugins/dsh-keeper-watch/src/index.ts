@@ -8,8 +8,16 @@
  * - k20 屏：TCP 探活 phoneHost:phonePort
  * - dsh err log：插件激活失败自检（只看本次启动段，面板 405 一类事故的哨兵）
  *
- * 久坐：快照里的 idle_sec（键鼠空闲秒数）。没有这个字段就只当不知道，
- * 不当成已经休息。空闲满 5 分钟清零。0 分钟 = 不提醒。
+ * 出口两条：notify 桥推微信（文字，必达）+ keeper-tts 出声（可选加强）。
+ * 文字发成功才出声；出声失败不回滚文字。
+ *
+ * 久坐：优先用快照里的 idle_sec；**hub 现在不报这个字段**，所以默认走本机
+ * ioreg 取键鼠空闲（localIdleProbe）。拿不到就当不知道，既不当成已休息，
+ * 也不当成一直在用。空闲满 5 分钟清零。0 分钟 = 不提醒。
+ *
+ * 2026-11-16 实测 hub /v1/snapshot：pc.cpu 只有 percent（**没有 temp_celsius**），
+ * devices 恒空。所以 CPU 过热走「温度优先、没温度按占用率」双轨，设备离线靠
+ * watchDeviceIds 点名（空 = 不启用，启动日志会明说）。
  */
 
 import type { Context } from '@deepseek-ai/cordis'
@@ -27,6 +35,8 @@ import {
   type ActivationScan,
 } from './gates.ts'
 import { createNotifyClient, type NotifyClient } from './notify.ts'
+import { createVoiceClient, type VoiceClient } from './voice.ts'
+import { readLocalIdleSec } from './idle.ts'
 import { Config, type KeeperWatchConfig } from './config.ts'
 import { applyWatchOverrides, readWatchOverridesSync } from './overrides.ts'
 import {
@@ -43,9 +53,14 @@ export const inject = ['tools']
 export { Config }
 
 interface HubSnapshot {
-  pc?: { online?: boolean; cpu?: { temp_celsius?: number }; memory?: { percent?: number } }
+  pc?: {
+    online?: boolean
+    /** hub 实测只给 percent，没有 temp_celsius（2026-11-16 核对 /v1/snapshot） */
+    cpu?: { temp_celsius?: number; percent?: number }
+    memory?: { percent?: number }
+  }
   devices?: { id?: string; online?: boolean }[]
-  /** 键鼠空闲秒数。缺省 = 这一拍不知道。 */
+  /** 键鼠空闲秒数。缺省 = 这一拍不知道（可用 localIdleSec 兜底）。 */
   idle_sec?: number
 }
 
@@ -62,6 +77,10 @@ interface WatcherDeps extends Fetchers {
   fetchSnapshot(): Promise<HubSnapshot | null>
   phoneAlive(): Promise<boolean>
   notify: NotifyClient
+  /** 出声（可选）。微信那条发成功之后才调用；失败只记 warn */
+  voice?: VoiceClient | undefined
+  /** 快照缺 idle_sec 时的本机兜底（可选） */
+  localIdleSec?: (() => Promise<number | null>) | undefined
   /** err log 本次启动段的激活失败扫描；null = 读不到（没配/文件没了），跳过 */
   readActivationFailures(): Promise<ActivationScan | null>
 }
@@ -110,6 +129,16 @@ export function createWatcher(config: KeeperWatchConfig, deps: WatcherDeps, log?
         if (d.said) {
           log?.info('已提醒 [%s]：%s', key, text)
           sendFailAt.delete(key)
+          // 出声放在文字之后：微信那条已经落地（人在外面也收得到），语音只是加强。
+          // 不 await——合成+播放可能要几秒，别拖住这个 tick。
+          if (deps.voice) {
+            void deps.voice
+              .speak(text)
+              .then((ok) => {
+                if (!ok) log?.warn('出声失败 [%s]（文字已发）', key)
+              })
+              .catch(() => {})
+          }
         } else if (d.reason === 'off') {
           sendFailAt.set(key, at) // 桥没通：冷静期后重试（配额/免打扰不走这条）
         }
@@ -136,13 +165,25 @@ export function createWatcher(config: KeeperWatchConfig, deps: WatcherDeps, log?
         const snap = await deps.fetchSnapshot()
         if (snap) {
           const pc = snap.pc
-          if (pc?.online && pc.cpu?.temp_celsius !== undefined) {
-            const temp = pc.cpu.temp_celsius
-            if (sustained.check('cpu_temp', temp >= config.cpuTempThresholdC, now.getTime(), config.cpuTempSustainedSec)) {
-              say('cpu_temp', `电脑 CPU 到 ${Math.round(temp)}° 了，跑了一会儿还没降。风扇狂转的话注意一下散热。`, now)
+          // CPU 双轨：hub 报温度就按温度判；只报 percent（本机 hub 现状）就按占用率判。
+          // 两条互斥——有温度时不看占用率，免得同一件事说两遍。
+          const cpuTemp = pc?.cpu?.temp_celsius
+          const cpuLoad = pc?.cpu?.percent
+          if (pc?.online && typeof cpuTemp === 'number') {
+            if (sustained.check('cpu_temp', cpuTemp >= config.cpuTempThresholdC, now.getTime(), config.cpuTempSustainedSec)) {
+              say('cpu_temp', `电脑 CPU 到 ${Math.round(cpuTemp)}° 了，跑了一会儿还没降。风扇狂转的话注意一下散热。`, now)
             }
+            sustained.clear('cpu_load')
           } else {
             sustained.clear('cpu_temp')
+            const loadOn = config.cpuPercentThreshold > 0 && typeof cpuLoad === 'number'
+            if (pc?.online && loadOn) {
+              if (sustained.check('cpu_load', cpuLoad >= config.cpuPercentThreshold, now.getTime(), config.cpuPercentSustainedSec)) {
+                say('cpu_load', `电脑 CPU 一直吃到 ${Math.round(cpuLoad)}% 了，跑了好几分钟没下来。看看是不是有什么在死循环。`, now)
+              }
+            } else {
+              sustained.clear('cpu_load')
+            }
           }
           if (pc?.online && pc.memory?.percent !== undefined) {
             const mem = pc.memory.percent
@@ -153,7 +194,15 @@ export function createWatcher(config: KeeperWatchConfig, deps: WatcherDeps, log?
             sustained.clear('memory')
           }
           if (pc?.online) {
-            const idle = typeof snap.idle_sec === 'number' ? snap.idle_sec : null
+            // 快照有 idle_sec 就用它；没有就本机取（hub 现在不报这个字段）
+            let idle: number | null = typeof snap.idle_sec === 'number' ? snap.idle_sec : null
+            if (idle === null && deps.localIdleSec) {
+              try {
+                idle = await deps.localIdleSec()
+              } catch {
+                idle = null
+              }
+            }
             if (sedentary.tick(idle, now.getTime(), config.sedentaryMinutes) && !inQuietHours(config.quietHours, now)) {
               say('sedentary', '坐了一阵了，起来走走。', now)
               sedentary.reset()
@@ -291,9 +340,22 @@ export function apply(ctx: Context, config: KeeperWatchConfig): void {
     return text === null ? null : scanActivationFailures(text)
   }
 
+  const voice = config.voiceEnabled
+    ? createVoiceClient({ baseUrl: config.voiceBaseUrl, volume: config.voiceVolume })
+    : undefined
+
   const watcher = createWatcher(
     live,
-    { fetchHourly, fetchPm25, fetchSnapshot, phoneAlive, notify, readActivationFailures },
+    {
+      fetchHourly,
+      fetchPm25,
+      fetchSnapshot,
+      phoneAlive,
+      notify,
+      readActivationFailures,
+      voice,
+      localIdleSec: config.localIdleProbe ? readLocalIdleSec : undefined,
+    },
     ctx.logger('keeper-watch'),
   )
   refreshLive()
@@ -304,16 +366,23 @@ export function apply(ctx: Context, config: KeeperWatchConfig): void {
   }, config.tickSec * 1000)
   timer.unref?.()
 
-  ctx.logger('keeper-watch').info(
-    'keeper-watch 就绪：quiet=%j limit=%d hub=%s phone=%s weather=%s(%s) devices=%j',
+  const log = ctx.logger('keeper-watch')
+  log.info(
+    'keeper-watch 就绪：quiet=%j limit=%d hub=%s phone=%s weather=%s(%s) voice=%s@%d idle=%s',
     config.quietHours,
     config.dailyLimit,
     config.hubBaseUrl,
     config.phoneHost || 'off',
     String(config.weatherEnabled),
     config.weatherCity,
-    config.watchDeviceIds,
+    config.voiceEnabled ? config.voiceBaseUrl : 'off',
+    config.voiceVolume,
+    config.localIdleProbe ? 'local' : 'snapshot-only',
   )
+  if (config.watchDeviceIds.length === 0) {
+    // 别让人以为在盯设备：devices 恒空 + 名单空 = 这条检查压根没启用
+    log.info('设备离线盯梢未启用（watchDeviceIds 为空）')
+  }
 }
 
 function connectTcp(host: string, port: number, timeoutMs: number): Promise<Socket> {
