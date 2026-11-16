@@ -33,7 +33,9 @@ import {
   SedentaryWatch,
   Sustained,
   type ActivationScan,
+  type GateStore,
 } from './gates.ts'
+import { createFileGateStore } from './state.ts'
 import { createNotifyClient, type NotifyClient } from './notify.ts'
 import { createVoiceClient, type VoiceClient } from './voice.ts'
 import { readLocalIdleSec } from './idle.ts'
@@ -83,6 +85,8 @@ interface WatcherDeps extends Fetchers {
   localIdleSec?: (() => Promise<number | null>) | undefined
   /** err log 本次启动段的激活失败扫描；null = 读不到（没配/文件没了），跳过 */
   readActivationFailures(): Promise<ActivationScan | null>
+  /** 闸门状态的落盘（可选）：给了就重启不丢「今天说过没有」 */
+  gateStore?: GateStore | undefined
 }
 
 export interface Watcher {
@@ -107,7 +111,7 @@ export function createWatcher(config: KeeperWatchConfig, deps: WatcherDeps, log?
   info(fmt: string, ...args: unknown[]): void
   warn(fmt: string, ...args: unknown[]): void
 }): Watcher {
-  const gate = new AlertGate({ quietHours: config.quietHours, dailyLimit: config.dailyLimit })
+  const gate = new AlertGate({ quietHours: config.quietHours, dailyLimit: config.dailyLimit }, deps.gateStore)
   const sedentary = new SedentaryWatch()
   let gateKey = JSON.stringify([config.quietHours, config.dailyLimit])
   const sustained = new Sustained()
@@ -296,6 +300,7 @@ export function createWatcher(config: KeeperWatchConfig, deps: WatcherDeps, log?
 }
 
 export function apply(ctx: Context, config: KeeperWatchConfig): void {
+  const log = ctx.logger('keeper-watch')
   const notify = createNotifyClient({
     url: config.notifyUrl,
     tokenPath: config.notifyTokenPath.trim() || join(homedir(), '.dsh', 'weixin', 'notify.json'),
@@ -344,6 +349,10 @@ export function apply(ctx: Context, config: KeeperWatchConfig): void {
     ? createVoiceClient({ baseUrl: config.voiceBaseUrl, volume: config.voiceVolume })
     : undefined
 
+  // 「同一件事一天一次」落盘：dsh 重启（改配置/装插件/kickstart）是日常动作，
+  // 去重不能跟着清空——2026-11-16 那天重启六次，PM2.5 就发了六条。
+  const gateStore = createFileGateStore(join(homedir(), '.dsh', 'keeper-watch-state.json'), (message) => log.warn(message))
+
   const watcher = createWatcher(
     live,
     {
@@ -355,8 +364,9 @@ export function apply(ctx: Context, config: KeeperWatchConfig): void {
       readActivationFailures,
       voice,
       localIdleSec: config.localIdleProbe ? readLocalIdleSec : undefined,
+      gateStore,
     },
-    ctx.logger('keeper-watch'),
+    log,
   )
   refreshLive()
   watcher.tickOnce().catch(() => {}) // 起步先跑一轮，错了不挡装载
@@ -366,7 +376,6 @@ export function apply(ctx: Context, config: KeeperWatchConfig): void {
   }, config.tickSec * 1000)
   timer.unref?.()
 
-  const log = ctx.logger('keeper-watch')
   log.info(
     'keeper-watch 就绪：quiet=%j limit=%d hub=%s phone=%s weather=%s(%s) voice=%s@%d idle=%s',
     config.quietHours,

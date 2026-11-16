@@ -85,22 +85,52 @@ export interface AlertGateOpts {
   dailyLimit: number
 }
 
+/** 落盘的状态：今天说过哪些事、今天说了几条。 */
+export interface GateState {
+  /** 记的是哪一天（Y-M-D）；跨天读回来直接作废 */
+  day: string
+  count: number
+  /** key → 说的那一天 */
+  alerted: Record<string, string>
+}
+
+/** 状态存取（可选）。给了就落盘，dsh 重启后「今天说过没有」还作数。 */
+export interface GateStore {
+  load(): GateState | null
+  save(state: GateState): void
+}
+
 export class AlertGate {
   private opts: AlertGateOpts
   private day = ''
   private count = 0
   private alerted = new Map<string, string>()
+  private store: GateStore | undefined
 
   // 注：不用 constructor 参数属性——dsh 以 strip-only 模式直载 .ts，不支持该语法
-  constructor(opts: AlertGateOpts) {
+  constructor(opts: AlertGateOpts, store?: GateStore) {
     this.opts = opts
+    this.store = store
+    // 2026-11-16 事故：这套记账只在内存里，dsh 每次重启就归零。那天 dsh
+    // 重启了六次，PM2.5 就发了六条一模一样的。所以状态要落盘。
+    //
+    // 这里只读回、不按「现在几点」重算：时间由 alert() 传进来（测试也能注入
+    // 假时钟），构造时用真实时间会把昨天读回来的状态误当跨天清掉。
+    const restored = this.restore()
+    if (restored) {
+      this.day = restored.day
+      this.count = restored.count
+      for (const [key, day] of Object.entries(restored.alerted)) {
+        if (typeof day === 'string') this.alerted.set(key, day)
+      }
+    }
   }
 
   configure(opts: { quietHours?: readonly [string, string] | []; dailyLimit?: number }): void {
     if (opts.quietHours !== undefined) this.opts.quietHours = opts.quietHours
     if (opts.dailyLimit !== undefined) this.opts.dailyLimit = opts.dailyLimit
-    // 配额与「今天说过没有」不跟着配置重建（同 proactive.py 的规矩）
-    this.resetIfNewDay(new Date())
+    // 配额与「今天说过没有」不跟着配置重建（同 proactive.py 的规矩）。
+    // 跨天与否由 alert() 按那次的时间判——这里拿真实时钟会把注入的假时间踩掉。
   }
 
   /** key = 这件事的名字（如 'pm25' / 'offline:lamp'）。send 成功才算说过。 */
@@ -117,6 +147,7 @@ export class AlertGate {
     if (!(await send())) return { said: false, reason: 'off' } // 桥没通：不算说过，下轮再试
     this.alerted.set(key, today)
     this.count += 1
+    this.persist()
     return { said: true, reason: 'spoke' }
   }
 
@@ -124,11 +155,37 @@ export class AlertGate {
     return { saidToday: this.count, dailyLimit: this.opts.dailyLimit }
   }
 
+  private restore(): GateState | null {
+    if (this.store === undefined) return null
+    try {
+      return this.store.load()
+    } catch {
+      return null
+    }
+  }
+
+  /** 落盘。写不进去只当这次没记住（下轮再说一遍），别把提醒链路拖垮。 */
+  private persist(): void {
+    if (this.store === undefined) return
+    const alerted: Record<string, string> = {}
+    for (const [key, day] of this.alerted) alerted[key] = day
+    try {
+      this.store.save({ day: this.day, count: this.count, alerted })
+    } catch {
+      // 落盘失败不回滚内存状态，这一次的判定照样有效
+    }
+  }
+
   private resetIfNewDay(now: Date): void {
     const today = dayKey(now)
     if (this.day === today) return
     this.day = today
     this.count = 0
+    // 昨天说过的顺手清掉（dup 判定本来就按日期比，这里只是别把文件越攒越脏）
+    for (const [key, day] of [...this.alerted]) {
+      if (day !== today) this.alerted.delete(key)
+    }
+    this.persist()
   }
 }
 

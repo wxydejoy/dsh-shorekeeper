@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { AlertGate, Sustained, inQuietHours } from '../src/gates.ts'
+import { AlertGate, Sustained, inQuietHours, type GateState } from '../src/gates.ts'
 
 function at(h: number, m = 0, day = 15): Date {
   return new Date(2026, 10, day, h, m, 0)
@@ -79,6 +79,67 @@ describe('AlertGate 三重闸', () => {
     expect(await gate.alert('pm25', at(10), () => false)).toEqual({ said: false, reason: 'off' })
     expect(await gate.alert('pm25', at(10, 1), send)).toEqual({ said: true, reason: 'spoke' })
     expect(spoken).toHaveLength(1)
+  })
+})
+
+describe('AlertGate 落盘（2026-11-16 重复提醒事故）', () => {
+  const quiet: [string, string] = ['23:00', '07:00']
+
+  /** 内存版 GateStore：模拟同一个状态文件被下一个进程读回 */
+  function memStore() {
+    let state: GateState | null = null
+    return {
+      load: () => state,
+      save: (next: GateState) => {
+        state = JSON.parse(JSON.stringify(next)) as GateState
+      },
+      peek: () => state,
+    }
+  }
+
+  it('重启（新建 gate）后同一件事不再说第二遍', async () => {
+    const store = memStore()
+    const first = new AlertGate({ quietHours: quiet, dailyLimit: 12 }, store)
+    expect((await first.alert('pm25', at(21, 0), () => true)).said).toBe(true)
+
+    // dsh 重启：新进程、新 gate，从同一个文件读回
+    const second = new AlertGate({ quietHours: quiet, dailyLimit: 12 }, store)
+    expect(await second.alert('pm25', at(21, 11), () => true)).toEqual({ said: false, reason: 'dup' })
+    expect(second.stats().saidToday).toBe(1)
+  })
+
+  it('配额也一起恢复：重启不把今天的条数清零', async () => {
+    const store = memStore()
+    const first = new AlertGate({ quietHours: quiet, dailyLimit: 2 }, store)
+    await first.alert('a', at(9), () => true)
+    await first.alert('b', at(10), () => true)
+
+    const second = new AlertGate({ quietHours: quiet, dailyLimit: 2 }, store)
+    expect(await second.alert('c', at(11), () => true)).toEqual({ said: false, reason: 'quota' })
+  })
+
+  it('跨天后 read 回来的状态作废：昨天说过的不算今天', async () => {
+    const store = memStore()
+    const first = new AlertGate({ quietHours: quiet, dailyLimit: 12 }, store)
+    await first.alert('pm25', at(21, 0, 15), () => true)
+
+    const second = new AlertGate({ quietHours: quiet, dailyLimit: 12 }, store)
+    expect((await second.alert('pm25', at(9, 0, 16), () => true)).said).toBe(true)
+    expect(second.stats().saidToday).toBe(1)
+  })
+
+  it('store 坏了（load 抛错）也照常工作，只是不记忆', async () => {
+    const broken = {
+      load: () => {
+        throw new Error('disk gone')
+      },
+      save: () => {
+        throw new Error('disk gone')
+      },
+    }
+    const gate = new AlertGate({ quietHours: quiet, dailyLimit: 12 }, broken)
+    expect((await gate.alert('pm25', at(10), () => true)).said).toBe(true)
+    expect(await gate.alert('pm25', at(10, 5), () => true)).toEqual({ said: false, reason: 'dup' })
   })
 })
 
