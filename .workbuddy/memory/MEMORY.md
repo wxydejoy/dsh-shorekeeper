@@ -8,7 +8,9 @@
 - token 抓法：`grep -o "token=[A-Za-z0-9_-]*" ~/.dsh/logs/dsh-web.out.log | tail -1`；种 cookie：`curl -c jar "http://10.14.14.117:3090/?token=…"`。console API：POST :3090/api/dsh-console/cmd（op: create/send/detail/sessions/cancel/selectModel/delete；send 支持 busyMode:'steer'）。
 - 微信：persona-modes.json / persona-active.json 现读现生效；路由 ~/.dsh/weixin/config.json 的 chatModel/proactiveModel 优先于全局默认（换模型两边一起改）。
 - 插件约定：TS，`export const inject=['tools']`（挂面板路由要加 'webServer' 且用 connection.register(ctx,…)）；分支改、check-all 绿了合 main 可推（push 授权仅 dsh-shorekeeper 仓库）。
+- **profile patch 按 entry id 命中，不是包名**：写完必须 `dsh --profile web --dump-config` 核对该 entry 上方有 `patched by …`、config 里有你写的键。教训：`- id: dsh-plugin-weixin` 一直静默失效（真实 entry id 是 `dsh-weixin`），导致 toolDenylist 与 busyMessageMode 从未生效；同理 `tools.restrict({deny})` 是精确名 Set，不支持通配。
 - 侧栏只留一行「守岸人」：`dsh-keeper-console` 的 main 面板声明 `keeper.tabs`(list) 并做标签壳；k20(主屏布局,20)、reading(阅读,30)、console(设置,10) 各注册一格。**别再给新面板注册 sidebar.panellist**，加到 keeper.tabs；`children` 要写在 register entry 顶层，壳所需 props 走 `inject` 传。契约测试 plugins/dsh-keeper-console/test/sidebar-shell.test.mjs。
+- **米家 = `@local/mijia-mcp` 守卫 + `@local/mijia-console` 面板**（`~/.dsh/local-bundles/dsh-mijia-console/`，改完要看它的 PATCHES.md）。白名单 5 台：挂灯 553687922 / 台灯 2052660114 / 空调 2007418912 + 两台温湿度计（卧室 blt.3.1mc438kgkcg00、耗材 blt.3.1mdoet55c4c01，`readOnly:true`）。`controlPerMinute:10` 按 did 分桶限流。**desk-mi 已于 2026-11-16 整套退役**（时间靠 dsh 内置 time-context，无需 desk_now）；微信灯控快路径随之消失，微信「开灯」多一次 LLM 往返。`dsh-mijia-sidebar` 同日删除（纯展示面板、无工具面，与 console 重复）。
 
 ## 规矩
 - 进度记在仓库根 plan-2026-11-03-evening-two-agent.md 的「进度」区。一次一件事，不擅自 push 越权，高危（熄屏等）要他点头。
@@ -17,7 +19,9 @@
 - 微信「只发最终回答」判据 = turn/end 仅 `reason.kind==='completed'` 冻结正文，interrupted/aborted/disposed 一律静默。
 
 ## 环境坑
-- 代理：shell 带 http_proxy=127.0.0.1:7890，curl 本机/LAN 必须 `--noproxy '*'`。
+- 代理：shell 带 http_proxy=127.0.0.1:62841（WorkBuddy 沙箱代理，7890 已死），curl 本机/LAN 必须 `--noproxy '*'`。**git push 报 HTTP2 framing / Empty reply 是瞬时抖动，重试即可**（不要急着改 remote 或清代理）。
+- **`dsh/node_modules/openai` 曾被升级事故砍成残包**（365 文件、无 package.json）→ 所有 LLM 调用 `PI_AI_ERROR Cannot find module './auth/workload-identity-auth.js'`。修法：按残包 `version.js` 版本 `npm pack` 后 rsync 覆盖。装/升 dsh 被打断必查 `node -e "require('openai')"`。
+- console API 新建会话默认模型是 profile 的 `agent-default-model`（现在 `openrouter/free`，本机无 key）→ 报 400 `Reasoning is mandatory…` 别当成生产故障，先 `op:selectModel` 切 ark 再测。
 - launchctl：WorkBuddy 进程内一律 error 5 → 走 `ssh localhost 'launchctl …'`（ZCode 侧改为关沙箱直跑）。bootout 后等 job 消失再 bootstrap，否则竞态 error 5。
 - launchd plist 必须显式 EnvironmentVariables.PATH=/opt/homebrew/bin:…。
 - 重启 :3090：`ssh localhost 'launchctl bootout gui/501/cn.weiekko.dsh-web; launchctl bootstrap gui/501 ~/Library/LaunchAgents/cn.weiekko.dsh-web.plist'`。**别用市场页「保存并重启」**（会写 disabled 把插件摘掉，还可能 EADDRINUSE 抢端口）。

@@ -77,6 +77,15 @@
 
 dsh 升级事故的遗留：`/opt/homebrew/lib/node_modules/@deepseek-ai/dsh/node_modules/openai/` 只剩 365 个文件、**没有 `package.json`**、缺 `auth/workload-identity-auth.js`，任何 LLM 调用报 `PI_AI_ERROR Cannot find module './auth/workload-identity-auth.js'`。修法：`npm pack openai@7.19.0`（版本取自残包 `version.js`）→ 旧目录备份到 `~/.dsh/backups/openai-broken-20261116` → `rsync -a` 覆盖（365 → 3548 文件）→ 重启。装/升 dsh 时若 npm 中途被打断，要顺手核一遍 `node -e "require('openai')"`。
 
+### 2026-11-16 二次瘦身：删 dsh-mijia-sidebar + 修 patch 命中 id
+
+- **删 `dsh-mijia-sidebar` 1.0.1**：`export const inject = ['connection','webServer']`，只注册一个纯展示面板，无 tools、无服务面；米家控制台（`@local/mijia-console`）落地后完全重复。删 dependency + `dsh.profile.bundles` 条目，侧栏只剩「守岸人」与「米家控制台」。
+- **patch 命中 id 的坑（重要）**：`cordis.patch.yml` 的 `- id: dsh-plugin-weixin` **一直没命中**——bundle 装进来的 entry id 是 `dsh-weixin`。判据只有一条：`dsh --profile web --dump-config` 里该 entry 上方有没有 `patched by …/cordis.patch.yml`，config 里有没有你写的键。
+  - 改成 `- id: dsh-weixin` 后立即出现 `patched by` + `toolDenylist`（65 条）+ `busyMessageMode: interrupt`。
+  - **连带后果**：`busyMessageMode: interrupt` 此前同样没生效（忙碌时按默认 queue 排队），提速①的「83→28 工具」裁剪也**可能**从未真正应用（未追溯；下次微信 turn 后看 openclaw 日志里有没有 `tool deny list applied (N names)` 即可定性）。
+  - 通用口径：patch 按 **entry id** 定位，不是包名，也不是 name。写完必须 dump 一次核对。
+- **微信米家工具面 14 → 5**：deny 掉 `list_homes` / `list_scenes` / `list_consumables` / `get_device_spec` / `run_scene` / `run_speaker_command` / `speaker_play` / `login` / `login_status`；保留 `list_devices` / `get_device_properties` / `set_device_property` / `run_device_action` / `get_statistics`。`tools.restrict({deny})` 是**精确名 Set** 匹配，不支持通配，只能逐个列。
+
 
 ## 升级流程（每次）
 
