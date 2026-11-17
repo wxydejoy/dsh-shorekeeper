@@ -82,7 +82,9 @@ say "4/5 自写插件链接"
 # 同理插件源码不得用 TS 参数属性（constructor(readonly x)），strip-only 不支持。
 # 2026-11-16：dsh-keeper-voice / dsh-keeper-agenda 已从运行面卸下（只注册从不调用的工具），
 # 不再链接；源码留在 plugins/ 下，需要时按 docs/compat-matrix.md 的回滚说明装回。
-for plugin in dsh-shorekeeper-desk-mi dsh-shorekeeper-k20 dsh-shorekeeper-reading; do
+# 2026-11-18：补上 dsh-keeper-watch（异动提醒）与 dsh-keeper-news（新闻播报）——
+# 两者一直在运行面跑，但此前没进这个列表，重装 profile 会把它们漏掉。
+for plugin in dsh-shorekeeper-desk-mi dsh-shorekeeper-k20 dsh-shorekeeper-reading dsh-keeper-watch dsh-keeper-news; do
   if [ ! -d "${REPO_DIR}/plugins/${plugin}/node_modules" ]; then
     echo "  ↳ ${plugin} 缺 node_modules，先装本地依赖…"
     (cd "${REPO_DIR}/plugins/${plugin}" && npm install --silent)
