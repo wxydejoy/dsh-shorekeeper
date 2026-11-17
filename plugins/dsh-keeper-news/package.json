@@ -1,0 +1,25 @@
+{
+  "name": "dsh-keeper-news",
+  "version": "0.1.0",
+  "description": "守岸人新闻播报：百度热搜取要闻，模板稿逐段送 keeper-tts 服务端喇叭念出来；早晚定时主动播一条，也能随时点播。错过的窗口、重启过的实例都不会重复开口（落盘去重）。",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "dsh": ">=0.2.2-rc.3 <0.3"
+  },
+  "main": "./src/index.ts",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-tools": "0.2.2-rc.3",
+    "@deepseek-ai/schemastery": "^3.18.0",
+    "@deepseek-ai/cordis": "^4.0.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}

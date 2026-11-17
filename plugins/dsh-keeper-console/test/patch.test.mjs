@@ -190,3 +190,53 @@ describe('按钮按下立刻改画', () => {
     assert.equal(next.watch.enabled, true)
   })
 })
+
+describe('新闻播报（news 段）', () => {
+  // 面板半区是 classic script（没有 export），照「按钮按下立刻改画」的办法把函数切出来测
+  const src = readFileSync(new URL('../lib/client.js', import.meta.url), 'utf8')
+  const start = src.indexOf('function paintSnap(')
+  const end = src.indexOf('function KeeperPanel(')
+  const paintSnap = new Function(`${src.slice(start, end)}\nreturn paintSnap`)()
+
+  const PATCH_NEWS = `${PATCH}
+- id: dsh-keeper-news
+  config:
+    enabled: true
+    morningAt: '07:45'
+    eveningAt: ''
+    count: 7
+`
+
+  it('基线从 profile patch 读（含空串时间点）', () => {
+    const b = readKeeperBaselines(PATCH_NEWS)
+    assert.equal(b.news.morningAt, '07:45')
+    assert.equal(b.news.eveningAt, '')
+    assert.equal(b.news.count, 7)
+    assert.equal(b.news.enabled, true)
+  })
+
+  it('显式空串是「关掉这一档」，不回落默认值', () => {
+    const b = readKeeperBaselines(PATCH_NEWS)
+    const v = mergeKeeperView(b, { news: { morningAt: '' } })
+    assert.equal(v.news.morningAt, '')
+    assert.equal(v.news.count, 7)
+  })
+
+  it('没有 news 块时用默认，不把开关画成关', () => {
+    const b = readKeeperBaselines(PATCH)
+    assert.equal(b.news.enabled, true)
+    assert.equal(b.news.morningAt, '08:30')
+    assert.equal(b.news.eveningAt, '21:00')
+    assert.equal(b.news.count, 5)
+  })
+
+  it('快照带上 news，按下后画面立刻改', () => {
+    const b = readKeeperBaselines(PATCH_NEWS)
+    const snap = shapeSnapshot({ tts: {}, voice: {}, baselines: b, overrides: {}, ttsAlive: true, patchFlags: {} })
+    assert.equal(snap.news.count, 7)
+    const next = paintSnap(snap, 'setKeeper', { news: { count: 3, morningAt: '' } })
+    assert.equal(next.news.count, 3)
+    assert.equal(next.news.morningAt, '')
+    assert.equal(next.news.eveningAt, '')
+  })
+})

@@ -28,6 +28,14 @@ window.__ModuleLoader__.load({
       loading: ['读取中…', 'Loading…'],
       groupVoice: ['朗读语音', 'Speech'],
       groupWatch: ['主动关怀（异动提醒）', 'Proactive alerts'],
+      groupNews: ['新闻播报', 'News briefing'],
+      newsEnabled: ['新闻播报总开关', 'News briefing master switch'],
+      newsEnabledHint: ['早晚各播一次；「播一下新闻」也能随时点播，出声走本机喇叭', 'Morning/evening briefings plus on-demand; spoken on this Mac'],
+      newsMorning: ['早报时间', 'Morning briefing'],
+      newsEvening: ['晚报时间', 'Evening briefing'],
+      newsCount: ['每次念几条', 'Items per briefing'],
+      newsClockHint: ['HH:MM；留空 = 不播这一档', 'HH:MM; empty = skip this slot'],
+      newsCountHint: ['5 条约 30 秒，8 条约 50 秒', '5 items ≈ 30s, 8 ≈ 50s'],
       groupDeskMi: ['台灯与设备控制', 'Device control'],
       groupStatus: ['状态', 'Status'],
       speakReplies: ['自动朗读回复', 'Speak agent replies'],
@@ -183,6 +191,37 @@ window.__ModuleLoader__.load({
       )
     }
 
+    /** 时间点一类的文本输入（新闻早晚报）：留空即关掉这一档。 */
+    function TextRow({ name, hint, value, busy, draft, placeholder, onDraft, onApply }) {
+      return h(
+        'div',
+        { className: 'dsh-keeper-console-row' },
+        h(
+          'div',
+          { className: 'dsh-keeper-console-label' },
+          h('div', { className: 'dsh-keeper-console-name' }, name),
+          hint ? h('div', { className: 'dsh-keeper-console-hint' }, hint) : null,
+        ),
+        h('input', {
+          className: 'dsh-keeper-console-input',
+          type: 'text',
+          placeholder: placeholder || '',
+          value: draft != null ? draft : value != null ? String(value) : '',
+          disabled: busy,
+          onChange: (e) => onDraft(e.target.value),
+        }),
+        h(
+          'button',
+          {
+            className: 'dsh-keeper-console-btn',
+            disabled: busy || draft == null || draft === value,
+            onClick: onApply,
+          },
+          tr('apply'),
+        ),
+      )
+    }
+
     function Section({ title, children }) {
       return h(
         'div',
@@ -202,6 +241,7 @@ window.__ModuleLoader__.load({
         voice: { ...(base.voice || {}) },
         watch: { ...(base.watch || {}) },
         deskMi: { ...(base.deskMi || {}) },
+        news: { ...(base.news || {}) },
       }
       if (action === 'setTts') {
         if (typeof payload?.speakReplies === 'boolean') next.tts.speakReplies = payload.speakReplies
@@ -226,6 +266,15 @@ window.__ModuleLoader__.load({
             next.deskMi.controlPerMinute = Math.max(0, Math.floor(desk.controlPerMinute))
           }
         }
+        const news = payload?.news
+        if (news && typeof news === 'object') {
+          if (typeof news.enabled === 'boolean') next.news.enabled = news.enabled
+          if (typeof news.morningAt === 'string') next.news.morningAt = news.morningAt
+          if (typeof news.eveningAt === 'string') next.news.eveningAt = news.eveningAt
+          if (typeof news.count === 'number' && Number.isFinite(news.count)) {
+            next.news.count = Math.min(10, Math.max(1, Math.floor(news.count)))
+          }
+        }
       }
       return next
     }
@@ -238,6 +287,9 @@ window.__ModuleLoader__.load({
       const [busyKey, setBusyKey] = useState('')
       const [flash, setFlash] = useState('')
       const [draftLimit, setDraftLimit] = useState(null)
+      const [draftMorning, setDraftMorning] = useState(null)
+      const [draftEvening, setDraftEvening] = useState(null)
+      const [draftNewsCount, setDraftNewsCount] = useState(null)
       const epoch = useRef(0)
 
       const load = useCallback(async () => {
@@ -378,6 +430,60 @@ window.__ModuleLoader__.load({
               }).then(() => setDraftLimit(null)),
           }),
         ),
+
+        // 新闻播报（dsh-keeper-news）：开关 + 早晚时间点 + 每次条数。
+        // 时间点留空 = 不播那一档；改动落 keeper-settings.json 的 news 段，插件每分钟现读。
+        snap.news
+          ? h(
+              Section,
+              { title: tr('groupNews') },
+              h(ToggleRow, {
+                name: tr('newsEnabled'),
+                hint: tr('newsEnabledHint'),
+                checked: snap.news.enabled,
+                busy: busy('n-en'),
+                onChange: (v) => void run('n-en', 'setKeeper', { news: { enabled: v } }),
+              }),
+              h(TextRow, {
+                name: tr('newsMorning'),
+                hint: tr('newsClockHint'),
+                placeholder: '08:30',
+                value: snap.news.morningAt,
+                draft: draftMorning,
+                onDraft: setDraftMorning,
+                busy: busy('n-am'),
+                onApply: () =>
+                  void run('n-am', 'setKeeper', { news: { morningAt: String(draftMorning ?? '') } }).then(() =>
+                    setDraftMorning(null),
+                  ),
+              }),
+              h(TextRow, {
+                name: tr('newsEvening'),
+                hint: tr('newsClockHint'),
+                placeholder: '21:00',
+                value: snap.news.eveningAt,
+                draft: draftEvening,
+                onDraft: setDraftEvening,
+                busy: busy('n-pm'),
+                onApply: () =>
+                  void run('n-pm', 'setKeeper', { news: { eveningAt: String(draftEvening ?? '') } }).then(() =>
+                    setDraftEvening(null),
+                  ),
+              }),
+              h(NumberRow, {
+                name: tr('newsCount'),
+                hint: tr('newsCountHint'),
+                value: snap.news.count,
+                draft: draftNewsCount,
+                onDraft: setDraftNewsCount,
+                busy: busy('n-cnt'),
+                onApply: () =>
+                  void run('n-cnt', 'setKeeper', {
+                    news: { count: Math.max(1, Math.floor(Number(draftNewsCount) || 5)) },
+                  }).then(() => setDraftNewsCount(null)),
+              }),
+            )
+          : null,
 
         // 控灯区（原 desk-mi 开关 + 每分钟配额）随 desk-mi 于 2026-11-16 退役：
         // 控灯权限与配额现在由米家 MCP 守卫持有

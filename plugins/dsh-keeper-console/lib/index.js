@@ -42,9 +42,12 @@ async function readOverrides() {
     return {
       watch: raw && typeof raw.watch === 'object' && raw.watch ? raw.watch : {},
       deskMi: raw && typeof raw.deskMi === 'object' && raw.deskMi ? raw.deskMi : {},
+      // news 段归 dsh-keeper-news 读；面板写回时必须原样带上，否则改一次提醒设置
+      // 就把新闻的开关/时间点抹掉了（同一份文件，谁都不能只回写自己那一段）。
+      news: raw && typeof raw.news === 'object' && raw.news ? raw.news : {},
     }
   } catch {
-    return { watch: {}, deskMi: {} }
+    return { watch: {}, deskMi: {}, news: {} }
   }
 }
 
@@ -132,6 +135,7 @@ function patchFilePath() {
 
 const WATCH_BASELINE = { enabled: true, quietEnabled: true, dailyLimit: 12 }
 const DESK_BASELINE = { controlEnabled: false, controlPerMinute: 10 }
+const NEWS_BASELINE = { enabled: true, morningAt: '08:30', eveningAt: '21:00', count: 5 }
 
 /** 插件行的文本块（含 id 行，不含下一条同级项）。找不到返回 ''。 */
 export function pluginBlock(raw, ns) {
@@ -185,6 +189,13 @@ function numIn(block, key, fallback) {
   return Number.isFinite(value) ? value : fallback
 }
 
+/** 字符串标量（引号可有可无）：空串是合法值（= 这一档关掉），所以不拿空串当缺失。 */
+function strIn(block, key, fallback) {
+  const matched = block.match(new RegExp('^\\s*' + key + ':\\s*[\'"]?([^\'"\\n#]*)[\'"]?\\s*(?:#.*)?$', 'm'))
+  if (!matched) return fallback
+  return matched[1].trim()
+}
+
 /** quietHours 空数组或起止相同 = 关；有一段不同的窗口 = 开；没写这个键 = 用默认（开）。 */
 function quietEnabledIn(block) {
   if (!block) return WATCH_BASELINE.quietEnabled
@@ -222,6 +233,7 @@ function quietEnabledIn(block) {
 export function readKeeperBaselines(raw) {
   const watch = pluginBlock(raw, 'dsh-keeper-watch')
   const desk = pluginBlock(raw, 'dsh-shorekeeper-desk-mi')
+  const news = pluginBlock(raw, 'dsh-keeper-news')
   return {
     watch: {
       enabled: flagIn(watch, 'enabled', WATCH_BASELINE.enabled),
@@ -232,13 +244,20 @@ export function readKeeperBaselines(raw) {
       controlEnabled: flagIn(desk, 'controlEnabled', DESK_BASELINE.controlEnabled),
       controlPerMinute: numIn(desk, 'controlPerMinute', DESK_BASELINE.controlPerMinute),
     },
+    news: {
+      enabled: flagIn(news, 'enabled', NEWS_BASELINE.enabled),
+      morningAt: strIn(news, 'morningAt', NEWS_BASELINE.morningAt),
+      eveningAt: strIn(news, 'eveningAt', NEWS_BASELINE.eveningAt),
+      count: numIn(news, 'count', NEWS_BASELINE.count),
+    },
   }
 }
 
-/** 覆盖叠到基线，语义与两插件的 apply*Overrides 一致。 */
+/** 覆盖叠到基线，语义与各插件的 apply*Overrides 一致。 */
 export function mergeKeeperView(baselines, overrides) {
   const watch = overrides.watch && typeof overrides.watch === 'object' ? overrides.watch : {}
   const desk = overrides.deskMi && typeof overrides.deskMi === 'object' ? overrides.deskMi : {}
+  const news = overrides.news && typeof overrides.news === 'object' ? overrides.news : {}
   return {
     watch: {
       enabled: typeof watch.enabled === 'boolean' ? watch.enabled : baselines.watch.enabled,
@@ -248,6 +267,13 @@ export function mergeKeeperView(baselines, overrides) {
     deskMi: {
       controlEnabled: typeof desk.controlEnabled === 'boolean' ? desk.controlEnabled : baselines.deskMi.controlEnabled,
       controlPerMinute: Number.isFinite(desk.controlPerMinute) ? desk.controlPerMinute : baselines.deskMi.controlPerMinute,
+    },
+    news: {
+      enabled: typeof news.enabled === 'boolean' ? news.enabled : baselines.news.enabled,
+      // 空串是「这一档不播」，不是缺字段：只有 null/undefined 才回落基线
+      morningAt: typeof news.morningAt === 'string' ? news.morningAt : baselines.news.morningAt,
+      eveningAt: typeof news.eveningAt === 'string' ? news.eveningAt : baselines.news.eveningAt,
+      count: Number.isFinite(news.count) ? news.count : baselines.news.count,
     },
   }
 }
@@ -295,6 +321,7 @@ export function shapeSnapshot({ tts, voice, baselines, overrides, ttsAlive, patc
     },
     watch: keeper.watch,
     deskMi: keeper.deskMi,
+    news: keeper.news,
     status: { keeperTtsAlive: ttsAlive === true },
   }
 }
@@ -412,7 +439,8 @@ export function apply(ctx) {
 
         case 'setKeeper': {
           const current = await readOverrides()
-          const next = { watch: { ...current.watch }, deskMi: { ...current.deskMi } }
+          // 三段都带上：这份文件是几个插件共用的，只回写自己那段会把别人的设置抹掉
+          const next = { watch: { ...current.watch }, deskMi: { ...current.deskMi }, news: { ...current.news } }
           const watch = payload?.watch
           if (watch && typeof watch === 'object') {
             if (typeof watch.enabled === 'boolean') next.watch.enabled = watch.enabled
@@ -430,6 +458,22 @@ export function apply(ctx) {
               deskMi.controlPerMinute >= 0
             ) {
               next.deskMi.controlPerMinute = Math.floor(deskMi.controlPerMinute)
+            }
+          }
+          const news = payload?.news
+          if (news && typeof news === 'object') {
+            if (typeof news.enabled === 'boolean') next.news.enabled = news.enabled
+            // HH:MM 或空串（= 这一档不播）；格式不对就拒，别把「8点半」写进去让插件静默跳过
+            for (const key of ['morningAt', 'eveningAt']) {
+              if (typeof news[key] !== 'string') continue
+              const value = news[key].trim()
+              if (value !== '' && !/^([01]?\d|2[0-3]):[0-5]\d$/.test(value)) {
+                throw Object.assign(new Error(`${key} 要写成 HH:MM（或留空）`), { code: 'bad_clock' })
+              }
+              next.news[key] = value
+            }
+            if (typeof news.count === 'number' && Number.isFinite(news.count)) {
+              next.news.count = Math.min(10, Math.max(1, Math.floor(news.count)))
             }
           }
           await writeOverrides(next)
